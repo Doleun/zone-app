@@ -78,22 +78,18 @@ export default function AssignPanel({
     return g;
   }, [filteredDrivers, sortMode, getDriverTotal]);
 
-  /* ── 구역 체크 변경 ── */
-  const onZoneCheck = (did, zid, checked) => {
+  /* ── 구역 체크 변경 → 즉시 저장 ── */
+  const onZoneCheck = async (did, zid, checked) => {
     const newDrivers = drivers.map(d => {
       if (d.id !== did) return d;
-      const zones = checked
+      const newZones = checked
         ? [...(d.zones||[]), zid]
         : (d.zones||[]).filter(id=>id!==zid);
-      return { ...d, zones };
+      const labelPos = newZones.length === 0 ? null : d.labelPos;
+      return { ...d, zones: newZones, labelPos };
     });
     setDrivers(newDrivers);
-  };
-
-  /* ── 고정기사 배정 저장 ── */
-  const saveAssign = async (did) => {
-    await onSave(null, drivers);
-    showToast('✅ 배송구역 저장 완료');
+    await onSave(null, newDrivers);
   };
 
   /* ── 백업기사 고정기사 선택 변경 ── */
@@ -127,7 +123,7 @@ export default function AssignPanel({
 
   /* ── 기사 선택 토글 ── */
   const toggleDriver = (did) => {
-    setSelectedDriverId(prev => prev === did ? null : did);
+    setSelectedDriverId(selectedDriverId === did ? null : did);
   };
 
   /* ── 기사 서브텍스트 ── */
@@ -139,21 +135,21 @@ export default function AssignPanel({
       return names ? `${names} 백업 · 평균 ${total}개` : '고정기사 미선택';
     }
     const zoneNames = (d.zones||[])
-      .map(zid=>zones.find(z=>z.id===zid)?.name).filter(Boolean).join(', ');
+      .map(zid=>zones.find(z=>z.id===zid)?.name).filter(Boolean)
+      .sort((a,b)=>a.localeCompare(b,'ko'))
+      .join(', ');
     return `${zoneNames||'구역 미배정'} · ${total}개`;
   };
 
   /* ── 배정 UI 빌드 ── */
   const buildAssignContent = (d) => {
     if (d.type === 'backup') {
-      // 소속 캠프 고정기사 목록
-      const campIds     = d.camps||[];
-      const fixedInCamps= drivers.filter(fd =>
+      const campIds      = d.camps||[];
+      const fixedInCamps = drivers.filter(fd =>
         fd.type==='fixed' && campIds.includes(fd.camp) && fd.shift===d.shift
       );
       const selFixed = d.selectedFixed||[];
 
-      // 평균 수량 미리보기
       let avgBlock = null;
       if (selFixed.length > 0) {
         const allZoneIds = [...new Set(
@@ -207,8 +203,23 @@ export default function AssignPanel({
     }
 
     // 고정기사 구역 체크박스
-    const eligibleZones = zones.filter(z=>z.camp===d.camp)
-      .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    // ✅ 수정: 같은 캠프 구역 + 이미 배정된 구역(다른 캠프라도) 모두 표시
+    const assignedZoneIds = new Set(d.zones || []);
+    const campZones = zones.filter(z => z.camp === d.camp);
+    const extraZones = zones.filter(z => assignedZoneIds.has(z.id) && z.camp !== d.camp);
+    const eligibleZones = [...campZones, ...extraZones]
+      .sort((a,b) => {
+        const aMe    = assignedZoneIds.has(a.id);
+        const bMe    = assignedZoneIds.has(b.id);
+        const aOther = !aMe && !!assignedMap[a.id];
+        const bOther = !bMe && !!assignedMap[b.id];
+        // 내 배정(0) > 미배정(1) > 타인 배정(2)
+        const rank = z => z.me ? 0 : z.other ? 2 : 1;
+        const rA = rank({ me: aMe, other: aOther });
+        const rB = rank({ me: bMe, other: bOther });
+        if (rA !== rB) return rA - rB;
+        return a.name.localeCompare(b.name, 'ko');
+      });
 
     // 같은 교대 다른 기사 배정 현황
     const assignedMap = {};
@@ -223,18 +234,19 @@ export default function AssignPanel({
           {eligibleZones.length === 0
             ? <div style={{ padding:8, fontSize:12, color:'var(--text2)' }}>배정 가능한 구역이 없습니다</div>
             : eligibleZones.map(z => {
-              const checked  = (d.zones||[]).includes(z.id);
+              const checked  = assignedZoneIds.has(z.id);
               const other    = assignedMap[z.id];
-              const disabled = other && !checked;
+              const disabled = other && !checked; // 다른 기사 배정 + 내가 미체크 시만 비활성
               const qty      = getQty(z, d.shift);
               const icon     = d.shift==='night'?'🌙':'☀️';
+              const isExtra  = z.camp !== d.camp; // 다른 캠프 구역 표시
               return (
                 <label key={z.id} className="cb-item" style={{ opacity: disabled ? .4 : 1 }}>
                   <input type="checkbox" checked={checked} disabled={disabled}
                     onChange={e=>onZoneCheck(d.id, z.id, e.target.checked)}
                     style={{ accentColor:'var(--accent)', cursor: disabled?'not-allowed':'pointer' }} />
                   <div className="color-dot" style={{ background:z.color, width:9, height:9 }} />
-                  <span>{z.name}</span>
+                  <span>{z.name}{isExtra && <span style={{ fontSize:9, color:'var(--text2)', marginLeft:3 }}>↗</span>}</span>
                   {other
                     ? <span style={{ fontSize:10, color:'var(--red)', marginLeft:'auto' }}>{other}</span>
                     : <span className="cb-qty">{icon}{qty}개</span>
@@ -244,10 +256,6 @@ export default function AssignPanel({
             })
           }
         </div>
-        <button className="btn btn-primary" style={{ marginTop:8, fontSize:11, padding:6 }}
-          onClick={()=>saveAssign(d.id)}>
-          💾 배정 저장
-        </button>
       </div>
     );
   };
@@ -255,10 +263,9 @@ export default function AssignPanel({
   /* ── 기사 아이템 렌더 ── */
   const renderDriverItem = (d) => {
     const isSelected = selectedDriverId === d.id;
-    const hidden     = false; // 가시성 기능은 추후
     return (
       <div key={d.id}
-        className={`assign-driver-item ${isSelected?'active':''} ${hidden?'zone-hidden':''}`}
+        className={`assign-driver-item ${isSelected?'active':''}`}
         onClick={()=>toggleDriver(d.id)}>
         <div className="assign-driver-header">
           <span className="assign-driver-name">
@@ -268,7 +275,6 @@ export default function AssignPanel({
               {d.shift==='night'?'🌙 야간':'☀️ 주간'}
             </span>
           </span>
-          {/* 가시성 버튼 추후 추가 */}
         </div>
         <div className="assign-driver-sub">{driverSubText(d)}</div>
         {isSelected && buildAssignContent(d)}

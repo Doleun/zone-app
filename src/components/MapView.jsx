@@ -10,6 +10,7 @@ export default function MapView({
   regions, camps,
   onSave, showToast, nextColor,
   setZones,
+  setDrivers,
   selectedDriverId,
   setSelectedDriverId,
   drawMode,
@@ -18,6 +19,7 @@ export default function MapView({
   hiddenZones,
   focusZoneId,
   setFocusZoneId,
+  focusDriverId,
   onAssignZoneToggle,
 }) {
   const mapRef                = useRef(null);
@@ -25,6 +27,7 @@ export default function MapView({
   const zoneLayersRef         = useRef({});
   const driverLayerRef        = useRef(null);
   const driverLabelMarkersRef = useRef([]);
+  const driverPolysRef        = useRef({}); // driverId → [poly, ...]
   const unassignedLayerRef    = useRef(null);
   const backupPreviewLayerRef = useRef(null);
   const assignOverlayRef      = useRef(null); // 배송구역 탭 클릭 오버레이
@@ -161,28 +164,69 @@ export default function MapView({
   }, [focusZoneId]);
 
   /* ══════════════════════════════════════
-     기사 선택 시 자동 줌
+     기사 선택 시 자동 줌 + 하이라이트
   ══════════════════════════════════════ */
   useEffect(() => {
-    if (!selectedDriverId || curTab !== 'assign') return;
+    if (!focusDriverId) return;
+    const { id: did } = focusDriverId;
     const map = mapInstance.current; if (!map) return;
 
-    const driver = drivers.find(d => d.id === selectedDriverId);
+    const driver = drivers.find(d => d.id === did);
     if (!driver) return;
 
     const dZones = (driver.zones || [])
       .map(zid => zones.find(z => z.id === zid))
       .filter(Boolean);
-    if (!dZones.length) return;
 
-    const allLatlngs = dZones.flatMap(z => z.latlngs.map(p => [p.lat, p.lng]));
-    if (!allLatlngs.length) return;
+    // 줌
+    if (dZones.length) {
+      const allLatlngs = dZones.flatMap(z => z.latlngs.map(p => [p.lat, p.lng]));
+      try {
+        map.fitBounds(L.latLngBounds(allLatlngs), { padding:[80,80], maxZoom:17, animate:true });
+      } catch(e) {}
+    }
 
-    try {
-      const bounds = L.latLngBounds(allLatlngs);
-      map.fitBounds(bounds, { padding:[60, 60], maxZoom:14, animate:true });
-    } catch(e) {}
-  }, [selectedDriverId]);
+    // renderDriversOnMap이 먼저 실행되도록 setTimeout
+    setTimeout(() => {
+      // A. 강조 + 흐리게
+      Object.entries(driverPolysRef.current).forEach(([id, { polys }]) => {
+        const isSel = id === did;
+        polys.forEach(poly => poly.setStyle({
+          fillOpacity: isSel ? .55 : .06,
+          weight:      isSel ? 4   : 1,
+          opacity:     isSel ? 1   : .3,
+        }));
+      });
+
+      // B. 깜빡임 (3회)
+      const selPolys = driverPolysRef.current[did]?.polys || [];
+      if (selPolys.length) {
+        let count = 0;
+        const pulse = setInterval(() => {
+          count++;
+          selPolys.forEach(poly => poly.setStyle(
+            count % 2 === 1 ? { fillOpacity:.1, weight:2 } : { fillOpacity:.55, weight:4 }
+          ));
+          if (count >= 6) {
+            clearInterval(pulse);
+            selPolys.forEach(poly => poly.setStyle({ fillOpacity:.55, weight:4, opacity:1 }));
+          }
+        }, 220);
+      }
+
+      // 2초 후 복원
+      setTimeout(() => {
+        Object.entries(driverPolysRef.current).forEach(([id, { polys }]) => {
+          const isSel = id === did;
+          polys.forEach(poly => poly.setStyle({
+            fillOpacity: isSel ? .4 : .1,
+            weight:      isSel ? 3  : 1,
+            opacity:     isSel ? 1  : .3,
+          }));
+        });
+      }, 2000);
+    }, 50);
+  }, [focusDriverId]);
 
   /* ══════════════════════════════════════
      백업기사 구역 미리보기
@@ -502,6 +546,7 @@ export default function MapView({
     driverLayerRef.current?.clearLayers();
     driverLabelMarkersRef.current.forEach(m => { try { map.removeLayer(m); } catch{} });
     driverLabelMarkersRef.current = [];
+    driverPolysRef.current = {};
 
     drivers.forEach(driver => {
       if (driver.type === 'backup' && driver.id !== selectedDriverId) return;
@@ -512,6 +557,7 @@ export default function MapView({
       const total   = getDriverTotal(driver);
       const opacity = selectedDriverId ? (driver.id === selectedDriverId ? .4 : .1) : .3;
       const weight  = selectedDriverId ? (driver.id === selectedDriverId ? 3  : 1)  : 2;
+      driverPolysRef.current[driver.id] = { color, polys: [] };
 
       try {
         const features = dZones.map(z => {
@@ -529,30 +575,51 @@ export default function MapView({
           : geom.coordinates.map(p => p[0].map(c => L.latLng(c[1], c[0])));
 
         polys.forEach((lls, i) => {
-          driverLayerRef.current.addLayer(
-            L.polygon(lls, { color, fillColor:color, fillOpacity:opacity, weight })
-          );
+          const poly = L.polygon(lls, { color, fillColor:color, fillOpacity:opacity, weight });
+          poly.on('click', () => {
+            setSelectedDriverId(driver.id);
+            // focusDriverId는 App에서 setSelectedDriverId 래퍼가 처리
+          });
+          driverLayerRef.current.addLayer(poly);
+          driverPolysRef.current[driver.id]?.polys.push(poly);
           if (i === 0) {
             const pos = driver.labelPos
               ? L.latLng(driver.labelPos.lat, driver.labelPos.lng)
               : centroid(lls.map(p => ({ lat:p.lat, lng:p.lng })));
-            driverLabelMarkersRef.current.push(
-              L.marker(pos, { icon: makeDriverIcon(driver, total), draggable:true, zIndexOffset:1000 }).addTo(map)
-            );
+            const label = L.marker(pos, { icon: makeDriverIcon(driver, total), draggable:true, zIndexOffset:1000 }).addTo(map);
+            label.on('click', () => setSelectedDriverId(driver.id));
+            label.on('dragend', async () => {
+              const p = label.getLatLng();
+              const newDrivers = drivers.map(d =>
+                d.id === driver.id ? { ...d, labelPos:{ lat:p.lat, lng:p.lng } } : d
+              );
+              setDrivers(newDrivers);
+              await onSave(null, newDrivers);
+            });
+            driverLabelMarkersRef.current.push(label);
           }
         });
       } catch(e) {
         dZones.forEach(z => {
-          driverLayerRef.current.addLayer(
-            L.polygon(z.latlngs.map(p => L.latLng(p.lat, p.lng)), { color, fillColor:color, fillOpacity:opacity, weight })
-          );
+          const poly = L.polygon(z.latlngs.map(p => L.latLng(p.lat, p.lng)), { color, fillColor:color, fillOpacity:opacity, weight });
+          poly.on('click', () => setSelectedDriverId(driver.id));
+          driverLayerRef.current.addLayer(poly);
+          driverPolysRef.current[driver.id]?.polys.push(poly);
         });
         const pos = driver.labelPos
           ? L.latLng(driver.labelPos.lat, driver.labelPos.lng)
           : centroid(dZones[0].latlngs);
-        driverLabelMarkersRef.current.push(
-          L.marker(pos, { icon: makeDriverIcon(driver, total), draggable:true, zIndexOffset:1000 }).addTo(map)
-        );
+        const label = L.marker(pos, { icon: makeDriverIcon(driver, total), draggable:true, zIndexOffset:1000 }).addTo(map);
+        label.on('click', () => setSelectedDriverId(driver.id));
+        label.on('dragend', async () => {
+          const p = label.getLatLng();
+          const newDrivers = drivers.map(d =>
+            d.id === driver.id ? { ...d, labelPos:{ lat:p.lat, lng:p.lng } } : d
+          );
+          setDrivers(newDrivers);
+          await onSave(null, newDrivers);
+        });
+        driverLabelMarkersRef.current.push(label);
       }
     });
   }, [drivers, zones, selectedDriverId, driverColor, getDriverTotal]);

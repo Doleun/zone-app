@@ -58,6 +58,9 @@ export default function App() {
   /* ── 구역 포커스 (목록 클릭 시 지도 이동) ── */
   const [focusZoneId, setFocusZoneId] = useState(null);
 
+  /* ── 기사 포커스 (하이라이트 트리거) ── */
+  const [focusDriverId, setFocusDriverId] = useState(null);
+
   /* ── 인증 ── */
   useEffect(() => {
     return onAuthStateChanged(auth, async user => {
@@ -119,17 +122,35 @@ export default function App() {
   /* ── 배송구역 탭: 지도에서 구역 토글 ── */
   const handleAssignZoneToggle = useCallback(async (zoneId) => {
     if (!selectedDriverId) return;
+    const currentDriver = drivers.find(d => d.id === selectedDriverId);
+    const isAssigned = (currentDriver?.zones || []).includes(zoneId);
+
+    // 미배정 → 다른 기사가 이미 배정한 구역이면 차단
+    if (!isAssigned) {
+      const otherDriver = drivers.find(d =>
+        d.id !== selectedDriverId &&
+        d.type === 'fixed' &&
+        d.shift === currentDriver?.shift &&
+        (d.zones || []).includes(zoneId)
+      );
+      if (otherDriver) {
+        showToast(`❌ ${otherDriver.name}에게 배정된 구역입니다`);
+        return;
+      }
+    }
+
     const newDrivers = drivers.map(d => {
       if (d.id !== selectedDriverId) return d;
-      const has = (d.zones || []).includes(zoneId);
-      return { ...d, zones: has
+      const newZones = isAssigned
         ? (d.zones || []).filter(id => id !== zoneId)
-        : [...(d.zones || []), zoneId]
-      };
+        : [...(d.zones || []), zoneId];
+      // 구역 전부 해제되면 레이블 위치 초기화
+      const labelPos = newZones.length === 0 ? null : d.labelPos;
+      return { ...d, zones: newZones, labelPos };
     });
     setDrivers(newDrivers);
     await handleSave(null, newDrivers);
-  }, [selectedDriverId, drivers, handleSave]);
+  }, [selectedDriverId, drivers, handleSave, showToast]);
 
   /* ── 탭 전환 시 그리기 모드 해제 ── */
   useEffect(() => {
@@ -241,7 +262,10 @@ export default function App() {
           {curTab === 'assign' && <AssignPanel
             {...commonProps}
             selectedDriverId={selectedDriverId}
-            setSelectedDriverId={setSelectedDriverId}
+            setSelectedDriverId={(id) => {
+              setSelectedDriverId(id);
+              if (id) setFocusDriverId({ id, ts: Date.now() });
+            }}
           />}
           {curTab === 'rc'     && <RegionCampPanel   {...commonProps} />}
         </div>
@@ -257,14 +281,19 @@ export default function App() {
           showToast={showToast}
           nextColor={nextColor}
           setZones={setZones}
+          setDrivers={setDrivers}
           selectedDriverId={selectedDriverId}
-          setSelectedDriverId={setSelectedDriverId}
+          setSelectedDriverId={(id) => {
+              setSelectedDriverId(id);
+              if (id) setFocusDriverId({ id, ts: Date.now() });
+            }}
           drawMode={drawMode}
           onDrawComplete={handleDrawComplete}
           pendingLatlngs={pendingLatlngs}
           hiddenZones={hiddenZones}
           focusZoneId={focusZoneId}
           setFocusZoneId={setFocusZoneId}
+          focusDriverId={focusDriverId}
           onAssignZoneToggle={handleAssignZoneToggle}
         />
       </div>
