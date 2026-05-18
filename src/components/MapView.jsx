@@ -2,23 +2,17 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import * as turf from '@turf/turf';
-import { ZONE_COLORS, DRIVER_COLORS } from '../App';
+import { DRIVER_COLORS } from '../App';
 
 export default function MapView({
   curTab,
   zones, drivers,
-  regions, camps,
-  onSave, showToast, nextColor,
-  setZones,
-  setDrivers,
-  selectedDriverId,
-  setSelectedDriverId,
-  drawMode,
-  onDrawComplete,
-  pendingLatlngs,
+  onSave, showToast,
+  setZones, setDrivers,
+  selectedDriverId, setSelectedDriverId,
+  drawMode, onDrawComplete, pendingLatlngs,
   hiddenZones,
-  focusZoneId,
-  setFocusZoneId,
+  focusZoneId, setFocusZoneId,
   focusDriverId,
   onAssignZoneToggle,
   onBackupFixedToggle,
@@ -28,24 +22,27 @@ export default function MapView({
   const zoneLayersRef         = useRef({});
   const driverLayerRef        = useRef(null);
   const driverLabelMarkersRef = useRef([]);
-  const driverPolysRef        = useRef({}); // driverId → [poly, ...]
+  const driverPolysRef        = useRef({});
   const unassignedLayerRef    = useRef(null);
-  const backupPreviewLayerRef = useRef(null);
-  const assignOverlayRef      = useRef(null); // 배송구역 탭 클릭 오버레이
+  const assignOverlayRef      = useRef(null);
 
   const drawClicksRef  = useRef([]);
   const drawDotsRef    = useRef([]);
   const drawLineRef    = useRef(null);
   const drawPreviewRef = useRef(null);
-  const drawModeRef    = useRef(false);
-  const selectedDriverIdRef = useRef(null); // 클릭 핸들러에서 최신 selectedDriverId 참조
-  const onAssignZoneToggleRef = useRef(onAssignZoneToggle);
+
+  /* 클릭 핸들러에서 최신값 참조용 ref */
+  const drawModeRef            = useRef(false);
+  const selectedDriverIdRef    = useRef(null);
+  const driversRef             = useRef(drivers);
+  const onAssignZoneToggleRef  = useRef(onAssignZoneToggle);
   const onBackupFixedToggleRef = useRef(onBackupFixedToggle);
 
   const [drawCount, setDrawCount] = useState(0);
 
   useEffect(() => { drawModeRef.current = drawMode; }, [drawMode]);
   useEffect(() => { selectedDriverIdRef.current = selectedDriverId; }, [selectedDriverId]);
+  useEffect(() => { driversRef.current = drivers; }, [drivers]);
   useEffect(() => { onAssignZoneToggleRef.current = onAssignZoneToggle; }, [onAssignZoneToggle]);
   useEffect(() => { onBackupFixedToggleRef.current = onBackupFixedToggle; }, [onBackupFixedToggle]);
 
@@ -56,10 +53,9 @@ export default function MapView({
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution:'© OpenStreetMap contributors', maxZoom:19,
     }).addTo(map);
-    driverLayerRef.current        = L.layerGroup().addTo(map);
-    unassignedLayerRef.current    = L.layerGroup().addTo(map);
-    backupPreviewLayerRef.current = L.layerGroup().addTo(map);
-    assignOverlayRef.current      = L.layerGroup().addTo(map);
+    driverLayerRef.current    = L.layerGroup().addTo(map);
+    unassignedLayerRef.current = L.layerGroup().addTo(map);
+    assignOverlayRef.current  = L.layerGroup().addTo(map);
     mapInstance.current = map;
   }, []);
 
@@ -114,8 +110,19 @@ export default function MapView({
     return DRIVER_COLORS[i % DRIVER_COLORS.length];
   }, [drivers]);
 
+  /* ── 드라이버 클릭 핸들러 헬퍼 ── */
+  const handleDriverClick = useCallback((driver) => {
+    const curSel = selectedDriverIdRef.current;
+    const curDriver = driversRef.current.find(d => d.id === curSel);
+    if (curDriver?.type === 'backup' && driver.type === 'fixed') {
+      onBackupFixedToggleRef.current?.(driver.id);
+    } else {
+      setSelectedDriverId(driver.id);
+    }
+  }, [setSelectedDriverId]);
+
   /* ══════════════════════════════════════
-     구역 목록 클릭 시 자동 줌
+     구역 포커스 (줌 + 하이라이트 + 깜빡임)
   ══════════════════════════════════════ */
   useEffect(() => {
     if (!focusZoneId) return;
@@ -123,45 +130,37 @@ export default function MapView({
     const map = mapInstance.current; if (!map) return;
     const zone = zones.find(z => z.id === zid);
     if (!zone || !zone.latlngs?.length) return;
+
     try {
-      const bounds = L.latLngBounds(zone.latlngs.map(p => [p.lat, p.lng]));
-      map.fitBounds(bounds, { padding:[80, 80], maxZoom:17, animate:true });
+      map.fitBounds(L.latLngBounds(zone.latlngs.map(p => [p.lat, p.lng])),
+        { padding:[80,80], maxZoom:17, animate:true });
     } catch(e) {}
 
-    // A. 선택 구역 강조 + 나머지 흐리게
     Object.entries(zoneLayersRef.current).forEach(([id, { poly }]) => {
-      const z = zones.find(z => z.id === id);
-      if (!z) return;
-      if (id === zid) {
-        poly.setStyle({ color: z.color, fillColor: z.color, fillOpacity:.55, weight:4, opacity:1 });
-      } else {
-        poly.setStyle({ color: z.color, fillColor: z.color, fillOpacity:.06, weight:1, opacity:.3 });
-      }
+      const z = zones.find(z => z.id === id); if (!z) return;
+      poly.setStyle(id === zid
+        ? { color:z.color, fillColor:z.color, fillOpacity:.55, weight:4, opacity:1 }
+        : { color:z.color, fillColor:z.color, fillOpacity:.06, weight:1, opacity:.3 }
+      );
     });
 
-    // B. 깜빡임 효과 (3회)
     const selPoly = zoneLayersRef.current[zid]?.poly;
     if (selPoly) {
       let count = 0;
       const pulse = setInterval(() => {
         count++;
-        selPoly.setStyle(count % 2 === 1
-          ? { fillOpacity:.1, weight:2 }
-          : { fillOpacity:.55, weight:4 }
-        );
+        selPoly.setStyle(count % 2 === 1 ? { fillOpacity:.1, weight:2 } : { fillOpacity:.55, weight:4 });
         if (count >= 6) {
           clearInterval(pulse);
-          selPoly.setStyle({ color: zone.color, fillColor: zone.color, fillOpacity:.55, weight:4, opacity:1 });
+          selPoly.setStyle({ color:zone.color, fillColor:zone.color, fillOpacity:.55, weight:4, opacity:1 });
         }
       }, 220);
     }
 
-    // 2초 후 원래 스타일로 복원
     const timer = setTimeout(() => {
       Object.entries(zoneLayersRef.current).forEach(([id, { poly }]) => {
-        const z = zones.find(z => z.id === id);
-        if (!z) return;
-        poly.setStyle({ color: z.color, fillColor: z.color, fillOpacity:.22, weight:2, opacity:1 });
+        const z = zones.find(z => z.id === id); if (!z) return;
+        poly.setStyle({ color:z.color, fillColor:z.color, fillOpacity:.22, weight:2, opacity:1 });
       });
     }, 2000);
 
@@ -169,7 +168,7 @@ export default function MapView({
   }, [focusZoneId]);
 
   /* ══════════════════════════════════════
-     기사 선택 시 자동 줌 + 하이라이트
+     드라이버 포커스 (줌 + 하이라이트 + 깜빡임)
   ══════════════════════════════════════ */
   useEffect(() => {
     if (!focusDriverId) return;
@@ -179,21 +178,18 @@ export default function MapView({
     const driver = drivers.find(d => d.id === did);
     if (!driver) return;
 
-    const dZones = (driver.zones || [])
-      .map(zid => zones.find(z => z.id === zid))
-      .filter(Boolean);
-
-    // 줌
+    const dZones = (driver.zones || []).map(zid => zones.find(z => z.id === zid)).filter(Boolean);
     if (dZones.length) {
-      const allLatlngs = dZones.flatMap(z => z.latlngs.map(p => [p.lat, p.lng]));
       try {
-        map.fitBounds(L.latLngBounds(allLatlngs), { padding:[80,80], maxZoom:17, animate:true });
+        const bounds = L.latLngBounds(dZones.flatMap(z => z.latlngs.map(p => [p.lat, p.lng])));
+        map.fitBounds(bounds, { padding:[80,80], maxZoom:17, animate:true });
       } catch(e) {}
     }
 
-    // renderDriversOnMap이 먼저 실행되도록 setTimeout
+    let pulseInterval = null;
+    let restoreTimer  = null;
+
     setTimeout(() => {
-      // A. 강조 + 흐리게
       Object.entries(driverPolysRef.current).forEach(([id, { polys }]) => {
         const isSel = id === did;
         polys.forEach(poly => poly.setStyle({
@@ -203,24 +199,22 @@ export default function MapView({
         }));
       });
 
-      // B. 깜빡임 (3회)
       const selPolys = driverPolysRef.current[did]?.polys || [];
       if (selPolys.length) {
         let count = 0;
-        const pulse = setInterval(() => {
+        pulseInterval = setInterval(() => {
           count++;
           selPolys.forEach(poly => poly.setStyle(
             count % 2 === 1 ? { fillOpacity:.1, weight:2 } : { fillOpacity:.55, weight:4 }
           ));
           if (count >= 6) {
-            clearInterval(pulse);
+            clearInterval(pulseInterval);
             selPolys.forEach(poly => poly.setStyle({ fillOpacity:.55, weight:4, opacity:1 }));
           }
         }, 220);
       }
 
-      // 2초 후 복원
-      setTimeout(() => {
+      restoreTimer = setTimeout(() => {
         Object.entries(driverPolysRef.current).forEach(([id, { polys }]) => {
           const isSel = id === did;
           polys.forEach(poly => poly.setStyle({
@@ -231,56 +225,12 @@ export default function MapView({
         });
       }, 2000);
     }, 50);
+
+    return () => {
+      if (pulseInterval) clearInterval(pulseInterval);
+      if (restoreTimer)  clearTimeout(restoreTimer);
+    };
   }, [focusDriverId]);
-
-  /* ══════════════════════════════════════
-     백업기사 구역 미리보기
-     - 백업기사 선택 + selectedFixed 변경 시
-     - 선택된 고정기사들의 구역을 주황 점선으로 표시
-  ══════════════════════════════════════ */
-  const renderBackupPreview = useCallback(() => {
-    backupPreviewLayerRef.current?.clearLayers();
-    if (!selectedDriverId || curTab !== 'assign') return;
-
-    const driver = drivers.find(d => d.id === selectedDriverId);
-    if (!driver || driver.type !== 'backup') return;
-
-    const selFixed = driver.selectedFixed || [];
-    if (!selFixed.length) return;
-
-    // 선택된 고정기사들의 구역 ID 수집
-    const previewZoneIds = [...new Set(
-      drivers.filter(d => selFixed.includes(d.id)).flatMap(d => d.zones || [])
-    )];
-    if (!previewZoneIds.length) return;
-
-    const allLatlngs = [];
-
-    previewZoneIds.forEach(zid => {
-      const z = zones.find(z => z.id === zid);
-      if (!z) return;
-      const lls = z.latlngs.map(p => L.latLng(p.lat, p.lng));
-      const poly = L.polygon(lls, {
-        color:'#f97316', fillColor:'#f97316',
-        fillOpacity:.22, weight:2.5, dashArray:'7,4',
-      });
-      backupPreviewLayerRef.current.addLayer(poly);
-      z.latlngs.forEach(p => allLatlngs.push([p.lat, p.lng]));
-    });
-
-    // 미리보기 구역으로 자동 줌
-    if (allLatlngs.length) {
-      try {
-        const map = mapInstance.current;
-        map.fitBounds(L.latLngBounds(allLatlngs), { padding:[60,60], maxZoom:14, animate:true });
-      } catch(e) {}
-    }
-  }, [selectedDriverId, drivers, zones, curTab]);
-
-  useEffect(() => {
-    if (curTab === 'assign') renderBackupPreview();
-    else backupPreviewLayerRef.current?.clearLayers();
-  }, [selectedDriverId, drivers, curTab, renderBackupPreview]);
 
   /* ══════════════════════════════════════
      그리기
@@ -393,7 +343,10 @@ export default function MapView({
       color: zone.color, fillColor: zone.color, fillOpacity:.22, weight:2,
     }).addTo(map);
 
-    poly.on('click', () => { if (drawModeRef.current) return; setFocusZoneId?.({ id: zone.id, ts: Date.now() }); });
+    poly.on('click', () => {
+      if (drawModeRef.current) return;
+      setFocusZoneId?.({ id: zone.id, ts: Date.now() });
+    });
 
     const labelPos = zone.labelPos
       ? L.latLng(zone.labelPos.lat, zone.labelPos.lng)
@@ -402,7 +355,10 @@ export default function MapView({
       icon: makeZoneIcon(zone), draggable:true, zIndexOffset:1000,
     }).addTo(map);
 
-    label.on('click', () => { if (drawModeRef.current) return; setFocusZoneId?.({ id: zone.id, ts: Date.now() }); });
+    label.on('click', () => {
+      if (drawModeRef.current) return;
+      setFocusZoneId?.({ id: zone.id, ts: Date.now() });
+    });
 
     label.on('dragend', async () => {
       const pos = label.getLatLng();
@@ -414,7 +370,7 @@ export default function MapView({
     });
 
     zoneLayersRef.current[zone.id] = { poly, label };
-  }, [zones, drivers, onSave, setZones]);
+  }, [zones, drivers, onSave, setZones, setFocusZoneId]);
 
   const removeZoneFromMap = useCallback((zid) => {
     const layer = zoneLayersRef.current[zid]; if (!layer) return;
@@ -463,7 +419,6 @@ export default function MapView({
     driverLabelMarkersRef.current.forEach(m => { try { map.removeLayer(m); } catch{} });
     driverLabelMarkersRef.current = [];
     unassignedLayerRef.current?.clearLayers();
-    backupPreviewLayerRef.current?.clearLayers();
     assignOverlayRef.current?.clearLayers();
 
     if (curTab === 'assign') {
@@ -509,8 +464,7 @@ export default function MapView({
   }, [zones, drivers]);
 
   /* ══════════════════════════════════════
-     배송구역 탭: 구역 클릭 오버레이
-     (기사 선택 시 모든 구역 투명 클릭 가능)
+     배정 오버레이 (클릭으로 구역 토글)
   ══════════════════════════════════════ */
   const renderAssignOverlay = useCallback(() => {
     assignOverlayRef.current?.clearLayers();
@@ -524,27 +478,23 @@ export default function MapView({
     zones.forEach(z => {
       const isAssigned = assignedIds.has(z.id);
       const lls = z.latlngs.map(p => L.latLng(p.lat, p.lng));
-
-      // 배정된 구역: 오렌지 테두리, 미배정: 완전 투명 (클릭만 가능)
       const poly = L.polygon(lls, {
         color:       isAssigned ? '#f97316' : '#ffffff',
         fillColor:   isAssigned ? '#f97316' : '#ffffff',
         fillOpacity: isAssigned ? 0.12 : 0.01,
         weight:      isAssigned ? 2.5 : 0,
-        opacity:     isAssigned ? 1 : 0,
+        opacity:     isAssigned ? 1   : 0,
       });
-
       poly.on('click', (e) => {
         L.DomEvent.stop(e);
         onAssignZoneToggleRef.current?.(z.id);
       });
-
       assignOverlayRef.current.addLayer(poly);
     });
   }, [selectedDriverId, drivers, zones, curTab]);
 
   /* ══════════════════════════════════════
-     기사 뷰 렌더
+     기사 렌더
   ══════════════════════════════════════ */
   const renderDriversOnMap = useCallback(() => {
     const map = mapInstance.current; if (!map) return;
@@ -564,6 +514,27 @@ export default function MapView({
       const weight  = selectedDriverId ? (driver.id === selectedDriverId ? 3  : 1)  : 2;
       driverPolysRef.current[driver.id] = { color, polys: [] };
 
+      const addPoly = (lls) => {
+        const poly = L.polygon(lls, { color, fillColor:color, fillOpacity:opacity, weight });
+        poly.on('click', () => handleDriverClick(driver));
+        driverLayerRef.current.addLayer(poly);
+        driverPolysRef.current[driver.id].polys.push(poly);
+      };
+
+      const addLabel = (pos) => {
+        const label = L.marker(pos, { icon: makeDriverIcon(driver, total), draggable:true, zIndexOffset:1000 }).addTo(map);
+        label.on('click', () => handleDriverClick(driver));
+        label.on('dragend', async () => {
+          const p = label.getLatLng();
+          const newDrivers = driversRef.current.map(d =>
+            d.id === driver.id ? { ...d, labelPos:{ lat:p.lat, lng:p.lng } } : d
+          );
+          setDrivers(newDrivers);
+          await onSave(null, newDrivers);
+        });
+        driverLabelMarkersRef.current.push(label);
+      };
+
       try {
         const features = dZones.map(z => {
           const ring = z.latlngs.map(p => [p.lng, p.lat]);
@@ -580,83 +551,23 @@ export default function MapView({
           : geom.coordinates.map(p => p[0].map(c => L.latLng(c[1], c[0])));
 
         polys.forEach((lls, i) => {
-          const poly = L.polygon(lls, { color, fillColor:color, fillOpacity:opacity, weight });
-          poly.on('click', () => {
-            const curSel = selectedDriverIdRef.current;
-            const curDriver = drivers.find(d => d.id === curSel);
-            if (curDriver?.type === 'backup' && driver.type === 'fixed') {
-              onBackupFixedToggleRef.current?.(driver.id);
-            } else {
-              setSelectedDriverId(driver.id);
-            }
-          });
-          driverLayerRef.current.addLayer(poly);
-          driverPolysRef.current[driver.id]?.polys.push(poly);
+          addPoly(lls);
           if (i === 0) {
             const pos = driver.labelPos
               ? L.latLng(driver.labelPos.lat, driver.labelPos.lng)
               : centroid(lls.map(p => ({ lat:p.lat, lng:p.lng })));
-            const label = L.marker(pos, { icon: makeDriverIcon(driver, total), draggable:true, zIndexOffset:1000 }).addTo(map);
-            label.on('click', () => {
-              const curSel = selectedDriverIdRef.current;
-              const curDriver = drivers.find(d => d.id === curSel);
-              if (curDriver?.type === 'backup' && driver.type === 'fixed') {
-                onBackupFixedToggleRef.current?.(driver.id);
-              } else {
-                setSelectedDriverId(driver.id);
-              }
-            });
-            label.on('dragend', async () => {
-              const p = label.getLatLng();
-              const newDrivers = drivers.map(d =>
-                d.id === driver.id ? { ...d, labelPos:{ lat:p.lat, lng:p.lng } } : d
-              );
-              setDrivers(newDrivers);
-              await onSave(null, newDrivers);
-            });
-            driverLabelMarkersRef.current.push(label);
+            addLabel(pos);
           }
         });
       } catch(e) {
-        dZones.forEach(z => {
-          const poly = L.polygon(z.latlngs.map(p => L.latLng(p.lat, p.lng)), { color, fillColor:color, fillOpacity:opacity, weight });
-          poly.on('click', () => {
-            const curSel = selectedDriverIdRef.current;
-            const curDriver = drivers.find(d => d.id === curSel);
-            if (curDriver?.type === 'backup' && driver.type === 'fixed') {
-              onBackupFixedToggleRef.current?.(driver.id);
-            } else {
-              setSelectedDriverId(driver.id);
-            }
-          });
-          driverLayerRef.current.addLayer(poly);
-          driverPolysRef.current[driver.id]?.polys.push(poly);
-        });
+        dZones.forEach(z => addPoly(z.latlngs.map(p => L.latLng(p.lat, p.lng))));
         const pos = driver.labelPos
           ? L.latLng(driver.labelPos.lat, driver.labelPos.lng)
           : centroid(dZones[0].latlngs);
-        const label = L.marker(pos, { icon: makeDriverIcon(driver, total), draggable:true, zIndexOffset:1000 }).addTo(map);
-        label.on('click', () => {
-          const curSel = selectedDriverIdRef.current;
-          const curDriver = drivers.find(d => d.id === curSel);
-          if (curDriver?.type === 'backup' && driver.type === 'fixed') {
-            onBackupFixedToggleRef.current?.(driver.id);
-          } else {
-            setSelectedDriverId(driver.id);
-          }
-        });
-        label.on('dragend', async () => {
-          const p = label.getLatLng();
-          const newDrivers = drivers.map(d =>
-            d.id === driver.id ? { ...d, labelPos:{ lat:p.lat, lng:p.lng } } : d
-          );
-          setDrivers(newDrivers);
-          await onSave(null, newDrivers);
-        });
-        driverLabelMarkersRef.current.push(label);
+        addLabel(pos);
       }
     });
-  }, [drivers, zones, selectedDriverId, driverColor, getDriverTotal]);
+  }, [drivers, zones, selectedDriverId, driverColor, getDriverTotal, handleDriverClick, onSave, setDrivers]);
 
   useEffect(() => {
     if (curTab === 'assign') {

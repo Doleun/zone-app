@@ -1,38 +1,23 @@
 import { useState, useMemo, useEffect } from 'react';
 
-/* ══════════════════════════════════════
-   ZonePanel
-   - 지역/캠프/교대 필터
-   - 구역 목록 (지역>캠프 그룹, 가나다순)
-   - 구역 추가(지도 그리기) / 편집 / 삭제
-   - 레이어 전체보기/해제, 개별 가시성
-══════════════════════════════════════ */
 export default function ZonePanel({
   zones, setZones, drivers,
   regions, camps,
   onSave, showToast, nextColor,
-  // 그리기
   drawMode, setDrawMode,
   pendingLatlngs, setPendingLatlngs,
-  // 가시성
   hiddenZones, setHiddenZones,
-  // 지도 포커스
   setFocusZoneId,
 }) {
-  /* ── 필터 ── */
   const [filterRegion, setFilterRegion] = useState('');
   const [filterCamp,   setFilterCamp]   = useState('');
   const [filterShift,  setFilterShift]  = useState('');
-
-  /* ── UI 상태 ── */
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [editZone,        setEditZone]        = useState(null);
   const [showModal,       setShowModal]       = useState(false);
-
-  /* ── 모달 폼 ── */
   const [form, setForm] = useState({ region:'', camp:'', name:'', qtyDay:0, qtyNight:0 });
 
-  /* ── pendingLatlngs 완료 시 자동으로 모달 열기 ── */
+  /* pendingLatlngs 완료 시 모달 열기 */
   useEffect(() => {
     if (pendingLatlngs) {
       setForm({ region:'', camp:'', name:'', qtyDay:0, qtyNight:0 });
@@ -41,7 +26,6 @@ export default function ZonePanel({
     }
   }, [pendingLatlngs]);
 
-  /* ── 필터링된 구역 ── */
   const filteredZones = useMemo(() => zones.filter(z => {
     if (filterRegion && z.region !== filterRegion) return false;
     if (filterCamp   && z.camp   !== filterCamp)   return false;
@@ -50,12 +34,10 @@ export default function ZonePanel({
     return true;
   }), [zones, filterRegion, filterCamp, filterShift]);
 
-  /* ── 필터링된 캠프 ── */
   const filteredCamps = useMemo(() =>
     filterRegion ? camps.filter(c => c.region === filterRegion) : camps,
     [camps, filterRegion]);
 
-  /* ── 그룹 구조 ── */
   const groupedZones = useMemo(() => {
     const grouped = {};
     filteredZones.forEach(z => {
@@ -76,14 +58,12 @@ export default function ZonePanel({
     return { grouped, sortedKeys };
   }, [filteredZones, regions, camps]);
 
-  /* ── 그룹 레이블 ── */
   const groupLabel = (z) => {
     const rName = regions.find(r=>r.id===z.region)?.name || '미분류';
     const cName = camps.find(c=>c.id===z.camp)?.name     || '미분류';
     return `${rName} > ${cName}`;
   };
 
-  /* ── 가시성 ── */
   const toggleVisibility = (zid) => {
     setHiddenZones(prev => {
       const next = new Set(prev);
@@ -103,16 +83,12 @@ export default function ZonePanel({
   const setAllVisibility = (visible) => {
     setHiddenZones(visible ? new Set() : new Set(zones.map(z=>z.id)));
   };
-
-  /* ── 그룹 접기 ── */
   const toggleGroup = (key) => {
     setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  /* ── 그리기 시작 ── */
   const startDraw = () => {
     if (drawMode) {
-      // 그리기 취소
       setDrawMode(false);
       setPendingLatlngs(null);
       showToast('그리기 취소됨');
@@ -123,7 +99,6 @@ export default function ZonePanel({
     }
   };
 
-  /* ── 편집 모달 열기 ── */
   const openEdit = (zone) => {
     setForm({
       region:   zone.region   || '',
@@ -136,23 +111,16 @@ export default function ZonePanel({
     setShowModal(true);
   };
 
-  /* ── 모달 닫기 ── */
   const closeModal = () => {
     setShowModal(false);
     setEditZone(null);
-    // 신규 구역 그리기 취소 시 pendingLatlngs 초기화
-    if (!editZone) {
-      setPendingLatlngs(null);
-    }
+    if (!editZone) setPendingLatlngs(null);
   };
 
-  /* ── 저장 ── */
   const saveZone = async () => {
     if (!form.name.trim()) { showToast('구역명을 입력하세요'); return; }
     let newZones;
-
     if (editZone) {
-      /* 편집 */
       newZones = zones.map(z => z.id === editZone.id
         ? { ...z,
             region:   form.region,
@@ -164,9 +132,8 @@ export default function ZonePanel({
         : z
       );
     } else {
-      /* 신규 */
       if (!pendingLatlngs) { showToast('구역을 먼저 지도에서 그려주세요'); return; }
-      const newZone = {
+      newZones = [...zones, {
         id:       crypto.randomUUID(),
         region:   form.region,
         camp:     form.camp,
@@ -175,11 +142,9 @@ export default function ZonePanel({
         qtyNight: parseInt(form.qtyNight) || 0,
         color:    nextColor(),
         latlngs:  pendingLatlngs,
-      };
-      newZones = [...zones, newZone];
+      }];
       setPendingLatlngs(null);
     }
-
     setZones(newZones);
     await onSave(newZones, null);
     setShowModal(false);
@@ -187,7 +152,6 @@ export default function ZonePanel({
     showToast('✅ 저장 완료');
   };
 
-  /* ── 삭제 ── */
   const deleteZone = async (zid) => {
     if (!window.confirm('이 구역을 삭제할까요?')) return;
     const newZones = zones.filter(z => z.id !== zid);
@@ -196,17 +160,13 @@ export default function ZonePanel({
     showToast('✅ 삭제 완료');
   };
 
-  /* ── 캠프 옵션 (모달용) ── */
   const modalCamps = form.region ? camps.filter(c=>c.region===form.region) : [];
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
-
-      {/* 상단 */}
       <div style={{ padding:'10px 10px 8px', borderBottom:'1px solid var(--border)', flexShrink:0, display:'flex', flexDirection:'column', gap:7 }}>
         <div style={{ fontSize:10, fontWeight:700, color:'var(--text2)', letterSpacing:'.8px', textTransform:'uppercase' }}>구역 목록</div>
 
-        {/* 필터 */}
         <div className="filter-row">
           <select className="filter-select" value={filterRegion} onChange={e=>{ setFilterRegion(e.target.value); setFilterCamp(''); }}>
             <option value="">전체 지역</option>
@@ -225,13 +185,11 @@ export default function ZonePanel({
           </select>
         </div>
 
-        {/* 레이어 제어 */}
         <div className="layer-ctrl-row">
           <button className="lbtn" onClick={()=>setAllVisibility(true)}>👁 전체보기</button>
           <button className="lbtn" onClick={()=>setAllVisibility(false)}>🚫 전체해제</button>
         </div>
 
-        {/* 구역 그리기 버튼 */}
         <button
           className={`btn ${drawMode ? 'btn-danger' : 'btn-primary'}`}
           style={{ fontSize:12, padding:'7px 0' }}
@@ -241,19 +199,18 @@ export default function ZonePanel({
         </button>
       </div>
 
-      {/* 목록 */}
       <div className="sb-list">
         {groupedZones.sortedKeys.length === 0
           ? (
             <div className="empty">
               <div className="empty-icon">🗺️</div>
-              <div className="empty-text">구역이 없습니다.<br/>아래 버튼으로 그려주세요.</div>
+              <div className="empty-text">구역이 없습니다.<br/>위 버튼으로 그려주세요.</div>
             </div>
           )
           : groupedZones.sortedKeys.map(key => {
-            const gZones  = groupedZones.grouped[key];
-            const isOpen  = collapsedGroups[key] !== true;
-            const allVis  = gZones.every(z=>!hiddenZones.has(z.id));
+            const gZones = groupedZones.grouped[key];
+            const isOpen = collapsedGroups[key] !== true;
+            const allVis = gZones.every(z=>!hiddenZones.has(z.id));
             return (
               <div key={key}>
                 <div className="group-header" onClick={()=>toggleGroup(key)}>
@@ -268,12 +225,13 @@ export default function ZonePanel({
                   <div className="group-body">
                     {gZones.map(z => {
                       const hidden = hiddenZones.has(z.id);
-                      const day    = parseInt(z.qtyDay   != null ? z.qtyDay   : (z.qty??0))||0;
-                      const night  = parseInt(z.qtyNight != null ? z.qtyNight : 0)||0;
+                      const day   = parseInt(z.qtyDay   != null ? z.qtyDay   : (z.qty??0))||0;
+                      const night = parseInt(z.qtyNight != null ? z.qtyNight : 0)||0;
                       return (
-                        <div key={z.id} className={`item${hidden?' zone-hidden':''}`}
-                          onClick={() => setFocusZoneId({ id: z.id, ts: Date.now() })}
+                        <div key={z.id}
+                          className={`item${hidden?' zone-hidden':''}`}
                           style={{ cursor:'pointer' }}
+                          onClick={() => setFocusZoneId({ id: z.id, ts: Date.now() })}
                         >
                           <div className="color-dot" style={{ background:z.color }} />
                           <div className="item-body">
@@ -281,11 +239,18 @@ export default function ZonePanel({
                             <div className="item-sub">☀️{day} / 🌙{night}</div>
                           </div>
                           <div className="item-actions">
-                            <button className="icon-btn" onClick={()=>toggleVisibility(z.id)}>
+                            <button className="icon-btn"
+                              onClick={e=>{ e.stopPropagation(); toggleVisibility(z.id); }}>
                               {hidden?'🚫':'👁'}
                             </button>
-                            <button className="icon-btn" onClick={()=>openEdit(z)}>✏️</button>
-                            <button className="icon-btn red" onClick={()=>deleteZone(z.id)}>🗑️</button>
+                            <button className="icon-btn"
+                              onClick={e=>{ e.stopPropagation(); openEdit(z); }}>
+                              ✏️
+                            </button>
+                            <button className="icon-btn red"
+                              onClick={e=>{ e.stopPropagation(); deleteZone(z.id); }}>
+                              🗑️
+                            </button>
                           </div>
                         </div>
                       );
@@ -298,7 +263,6 @@ export default function ZonePanel({
         }
       </div>
 
-      {/* 구역 모달 (편집 / 신규) */}
       {showModal && (
         <div className="overlay">
           <div className="modal" onClick={e=>e.stopPropagation()}>
@@ -318,7 +282,6 @@ export default function ZonePanel({
                 {regions.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </div>
-
             <div className="field">
               <label className="field-label">캠프</label>
               <select className="field-input" value={form.camp}
@@ -327,14 +290,12 @@ export default function ZonePanel({
                 {modalCamps.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
-
             <div className="field">
               <label className="field-label">구역명</label>
               <input className="field-input" value={form.name} placeholder="예: 103A"
                 onChange={e=>setForm(f=>({...f,name:e.target.value}))}
                 onKeyDown={e=>e.key==='Enter'&&saveZone()} />
             </div>
-
             <div style={{ display:'flex', gap:8 }}>
               <div className="field" style={{ flex:1 }}>
                 <label className="field-label">☀️ 주간 수량</label>

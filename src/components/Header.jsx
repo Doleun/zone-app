@@ -11,9 +11,10 @@ export default function Header({
 }) {
   const isMaster = currentRole === 'master';
 
-  const [showUserMgmt,    setShowUserMgmt]    = useState(false);
-  const [inviteEmail,     setInviteEmail]     = useState('');
-  const [inviteRole,      setInviteRole]      = useState('staff');
+  const [showUserMgmt,  setShowUserMgmt]  = useState(false);
+  const [showManual,    setShowManual]    = useState(false);
+  const [inviteEmail,   setInviteEmail]   = useState('');
+  const [inviteRole,    setInviteRole]    = useState('staff');
 
   /* ── Excel 내보내기 ── */
   const exportExcel = () => {
@@ -52,11 +53,11 @@ export default function Header({
           updated++;
           return {
             ...z,
-            name:      String(row['구역명'] || z.name).trim(),
-            qtyDay:    parseInt(row['주간수량']) || 0,
-            qtyNight:  parseInt(row['야간수량']) || 0,
-            color:     /^#[0-9A-Fa-f]{6}$/.test(String(row['색상']||'').trim())
-                         ? String(row['색상']).trim() : z.color,
+            name:     String(row['구역명'] || z.name).trim(),
+            qtyDay:   parseInt(row['주간수량']) || 0,
+            qtyNight: parseInt(row['야간수량']) || 0,
+            color:    /^#[0-9A-Fa-f]{6}$/.test(String(row['색상']||'').trim())
+                        ? String(row['색상']).trim() : z.color,
           };
         });
         await onSave(newZones, drivers);
@@ -133,10 +134,8 @@ export default function Header({
     catch(e) { showToast('❌ 삭제 실패: ' + e.message); }
   };
 
-  /* ── 저장 인디케이터 ── */
   const saveText = saveState === 'saving' ? '● 저장 중...' : saveState === 'saved' ? '● 저장됨' : '●';
 
-  /* ── 탭 버튼 스타일 ── */
   const tabStyle = (key) => ({
     padding:'6px 13px', borderRadius:7, border:'none',
     background: curTab === key ? 'var(--accent)' : 'transparent',
@@ -147,7 +146,6 @@ export default function Header({
 
   return (
     <>
-      {/* 헤더 */}
       <div style={{
         background:'var(--sidebar)', borderBottom:'1px solid var(--border)',
         height:50, display:'flex', alignItems:'center',
@@ -171,6 +169,7 @@ export default function Header({
             <label className="hbtn" style={{ cursor:'pointer' }}>
               📂 복원<input type="file" accept=".json" onChange={importBackup} style={{ display:'none' }} />
             </label>
+            <button className="hbtn" onClick={() => setShowManual(true)}>📋 매뉴얼</button>
           </>}
 
           <button className="hbtn" onClick={exportExcel}>📥 Excel 내보내기</button>
@@ -180,22 +179,17 @@ export default function Header({
           <button className="logout-btn" onClick={logout}>로그아웃</button>
         </div>
 
-        {/* 탭 - 등록 그룹 | 구분선 | 할당 그룹 */}
+        {/* 탭 — 등록 그룹 | 구분선 | 할당 그룹 */}
         <div style={{ display:'flex', gap:3, marginLeft:'auto', flexShrink:0, alignItems:'center' }}>
-          {/* 등록 그룹 */}
-          {isMaster && <button style={tabStyle('rc')} onClick={() => setCurTab('rc')}>캠프/지역</button>}
+          {isMaster && <button style={tabStyle('rc')}     onClick={() => setCurTab('rc')}>캠프/지역</button>}
           <button style={tabStyle('drvreg')} onClick={() => setCurTab('drvreg')}>기사</button>
-          <button style={tabStyle('zone')} onClick={() => setCurTab('zone')}>구역</button>
-
-          {/* 구분선 */}
-          <div style={{ width:1, height:20, background:'var(--border)', margin:'0 8px', flexShrink:0, opacity:.6 }} />
-
-          {/* 할당 그룹 */}
+          <button style={tabStyle('zone')}   onClick={() => setCurTab('zone')}>구역</button>
+          <div style={{ width:1, height:20, background:'var(--border)', margin:'0 8px', opacity:.6 }} />
           <button style={tabStyle('assign')} onClick={() => setCurTab('assign')}>배송할당</button>
         </div>
       </div>
 
-      {/* ── 사용자 관리 모달 ── */}
+      {/* 사용자 관리 모달 */}
       {showUserMgmt && (
         <div className="overlay" onClick={() => setShowUserMgmt(false)}>
           <div className="modal" style={{ maxWidth:420 }} onClick={e => e.stopPropagation()}>
@@ -244,7 +238,53 @@ export default function Header({
           </div>
         </div>
       )}
+      {/* 서버 매뉴얼 모달 */}
+      {showManual && (
+        <div className="overlay" onClick={() => setShowManual(false)}>
+          <div className="modal" style={{ maxWidth:480 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-title">📋 서버 매뉴얼</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:14, fontSize:12 }}>
 
+              <div>
+                <div style={{ fontWeight:700, color:'var(--accent)', marginBottom:6 }}>🚀 개발 서버 실행</div>
+                <pre style={{ background:'var(--surface2)', borderRadius:6, padding:'10px 12px', margin:0, fontSize:11, lineHeight:1.8, overflowX:'auto' }}>
+{`cd C:\\zone-app
+npm run dev`}
+                </pre>
+              </div>
+
+              <div>
+                <div style={{ fontWeight:700, color:'var(--accent)', marginBottom:6 }}>💾 작업 후 저장 (Push)</div>
+                <pre style={{ background:'var(--surface2)', borderRadius:6, padding:'10px 12px', margin:0, fontSize:11, lineHeight:1.8, overflowX:'auto' }}>
+{`git add .
+git commit -m "작업내용"
+git push`}
+                </pre>
+              </div>
+
+              <div>
+                <div style={{ fontWeight:700, color:'var(--accent)', marginBottom:6 }}>📥 다른 PC에서 최신 받기 (Pull)</div>
+                <pre style={{ background:'var(--surface2)', borderRadius:6, padding:'10px 12px', margin:0, fontSize:11, lineHeight:1.8, overflowX:'auto' }}>
+{`cd C:\\zone-app
+git pull`}
+                </pre>
+              </div>
+
+              <div>
+                <div style={{ fontWeight:700, color:'var(--accent)', marginBottom:6 }}>🌐 배포</div>
+                <pre style={{ background:'var(--surface2)', borderRadius:6, padding:'10px 12px', margin:0, fontSize:11, lineHeight:1.8, overflowX:'auto' }}>
+{`npm run build
+firebase deploy`}
+                </pre>
+              </div>
+
+            </div>
+            <div className="modal-btns">
+              <button className="btn btn-secondary" onClick={() => setShowManual(false)}>닫기</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -1,16 +1,15 @@
 import { useState, useMemo, useCallback } from 'react';
 
-/* ── 접기/펼치기 섹션 ── */
-function CollapsibleSection({ label, color, children, indent = false }) {
+function CollapsibleSection({ label, color, children }) {
   const [open, setOpen] = useState(true);
   return (
-    <div style={{ marginLeft: indent ? 8 : 0 }}>
+    <div>
       <div
         style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 8px', margin:'4px 0 2px', cursor:'pointer' }}
         onClick={() => setOpen(o => !o)}
       >
         <div style={{ flex:1, height:1, background:color, opacity:.4 }} />
-        <span style={{ fontSize: indent ? 10 : 11, color, fontWeight:700, whiteSpace:'nowrap' }}>{label}</span>
+        <span style={{ fontSize:11, color, fontWeight:700, whiteSpace:'nowrap' }}>{label}</span>
         <span style={{ fontSize:10, color, opacity:.7 }}>{open ? '▲' : '▼'}</span>
         <div style={{ flex:1, height:1, background:color, opacity:.4 }} />
       </div>
@@ -19,13 +18,6 @@ function CollapsibleSection({ label, color, children, indent = false }) {
   );
 }
 
-/* ══════════════════════════════════════
-   AssignPanel
-   - 교대별 그룹핑 + 배정/미배정 분리
-   - 고정기사: 구역 체크박스 직접 배정
-   - 백업기사: 고정기사 복수 선택 → 구역 자동 적용
-   - 기사 선택 시 지도 하이라이트 (selectedDriverId)
-══════════════════════════════════════ */
 export default function AssignPanel({
   zones, setZones,
   drivers, setDrivers,
@@ -33,19 +25,16 @@ export default function AssignPanel({
   onSave, showToast,
   selectedDriverId, setSelectedDriverId,
 }) {
-  /* ── 필터 ── */
   const [filterRegion, setFilterRegion] = useState('');
   const [filterCamp,   setFilterCamp]   = useState('');
   const [filterShift,  setFilterShift]  = useState('');
   const [sortMode,     setSortMode]     = useState('name');
   const [filterType,   setFilterType]   = useState('fixed');
 
-  /* ── 필터링된 캠프 ── */
   const filteredCamps = useMemo(() =>
     filterRegion ? camps.filter(c=>c.region===filterRegion) : camps,
     [camps, filterRegion]);
 
-  /* ── 교대 수량 계산 ── */
   const getQty = useCallback((zone, shift) => {
     if (!zone) return 0;
     const raw = shift === 'night'
@@ -54,7 +43,6 @@ export default function AssignPanel({
     return parseInt(raw) || 0;
   }, []);
 
-  /* ── 기사 합산 수량 ── */
   const getDriverTotal = useCallback((d) => {
     const shift = d.shift || 'day';
     const total = (d.zones||[]).reduce((s,zid) => {
@@ -66,7 +54,6 @@ export default function AssignPanel({
     return total;
   }, [zones, getQty]);
 
-  /* ── 필터링된 기사 ── */
   const filteredDrivers = useMemo(() => {
     return drivers.filter(d => {
       if (d.type !== filterType) return false;
@@ -82,50 +69,26 @@ export default function AssignPanel({
     });
   }, [drivers, filterRegion, filterCamp, filterShift, filterType]);
 
-  /* ── 교대별 그룹핑 + 배정/미배정 분리 ── */
-  const grouped = useMemo(() => {
-    const g = { day:{ assigned:[], unassigned:[] }, night:{ assigned:[], unassigned:[] } };
-    filteredDrivers.forEach(d => {
-      const shift  = d.shift || 'day';
-      const bucket = (d.zones||[]).length > 0 ? 'assigned' : 'unassigned';
-      if (!g[shift]) g[shift] = { assigned:[], unassigned:[] };
-      g[shift][bucket].push(d);
-    });
-    const sorter = (a,b) => sortMode==='qty'
-      ? getDriverTotal(b)-getDriverTotal(a)
-      : a.name.localeCompare(b.name,'ko');
-    Object.keys(g).forEach(s => {
-      g[s].assigned.sort(sorter);
-      g[s].unassigned.sort(sorter);
-    });
-    return g;
-  }, [filteredDrivers, sortMode, getDriverTotal]);
-
-  /* ── 구역 체크 변경 → 즉시 저장 ── */
   const onZoneCheck = async (did, zid, checked) => {
     const newDrivers = drivers.map(d => {
       if (d.id !== did) return d;
       const newZones = checked
         ? [...(d.zones||[]), zid]
         : (d.zones||[]).filter(id=>id!==zid);
-      const labelPos = newZones.length === 0 ? null : d.labelPos;
-      return { ...d, zones: newZones, labelPos };
+      return { ...d, zones: newZones, labelPos: newZones.length === 0 ? null : d.labelPos };
     });
     setDrivers(newDrivers);
     await onSave(null, newDrivers);
   };
 
-  /* ── 백업기사 고정기사 선택 변경 → 즉시 적용+저장 ── */
   const onBackupFixedChange = async (backupId, fixedId, checked) => {
     const backup = drivers.find(d => d.id === backupId);
     const sel = checked
       ? [...(backup?.selectedFixed||[]), fixedId]
       : (backup?.selectedFixed||[]).filter(id => id !== fixedId);
-
     const allZoneIds = sel.length > 0
       ? [...new Set(drivers.filter(d => sel.includes(d.id)).flatMap(d => d.zones||[]))]
       : [];
-
     const newDrivers = drivers.map(d =>
       d.id === backupId ? { ...d, selectedFixed: sel, zones: allZoneIds } : d
     );
@@ -133,12 +96,10 @@ export default function AssignPanel({
     await onSave(null, newDrivers);
   };
 
-  /* ── 기사 선택 토글 ── */
   const toggleDriver = (did) => {
     setSelectedDriverId(selectedDriverId === did ? null : did);
   };
 
-  /* ── 기사 서브텍스트 ── */
   const driverSubText = (d) => {
     const total = getDriverTotal(d);
     if (d.type === 'backup') {
@@ -153,7 +114,6 @@ export default function AssignPanel({
     return `${zoneNames||'구역 미배정'} · ${total}개`;
   };
 
-  /* ── 배정 UI 빌드 ── */
   const buildAssignContent = (d) => {
     if (d.type === 'backup') {
       const campIds      = d.camps||[];
@@ -199,17 +159,17 @@ export default function AssignPanel({
                     return a.name.localeCompare(b.name, 'ko');
                   })
                   .map(fd => {
-                  const cName   = camps.find(c=>c.id===fd.camp)?.name||'';
-                  const checked = selFixed.includes(fd.id);
-                  return (
-                    <label key={fd.id} className={`backup-fixed-btn ${checked?'selected':''}`}>
-                      <input type="checkbox" checked={checked}
-                        onChange={e=>onBackupFixedChange(d.id, fd.id, e.target.checked)}
-                        style={{ accentColor:'var(--blue)', cursor:'pointer' }} />
-                      {fd.name} <span style={{ color:'var(--text2)', fontWeight:400 }}>{cName}</span>
-                    </label>
-                  );
-                })}
+                    const cName   = camps.find(c=>c.id===fd.camp)?.name||'';
+                    const checked = selFixed.includes(fd.id);
+                    return (
+                      <label key={fd.id} className={`backup-fixed-btn ${checked?'selected':''}`}>
+                        <input type="checkbox" checked={checked}
+                          onChange={e=>onBackupFixedChange(d.id, fd.id, e.target.checked)}
+                          style={{ accentColor:'var(--blue)', cursor:'pointer' }} />
+                        {fd.name} <span style={{ color:'var(--text2)', fontWeight:400 }}>{cName}</span>
+                      </label>
+                    );
+                  })}
               </div>
             )
           }
@@ -218,17 +178,14 @@ export default function AssignPanel({
       );
     }
 
-    // 고정기사 구역 체크박스
     const assignedZoneIds = new Set(d.zones || []);
-
-    // 같은 교대 다른 기사 배정 현황 (eligibleZones 정렬에서 사용하므로 먼저 선언)
     const assignedMap = {};
     drivers.forEach(od => {
       if (od.id===d.id || od.shift!==d.shift) return;
       (od.zones||[]).forEach(zid => { assignedMap[zid]=od.name; });
     });
 
-    const campZones = zones.filter(z => z.camp === d.camp);
+    const campZones  = zones.filter(z => z.camp === d.camp);
     const extraZones = zones.filter(z => assignedZoneIds.has(z.id) && z.camp !== d.camp);
     const eligibleZones = [...campZones, ...extraZones]
       .sort((a,b) => {
@@ -251,10 +208,10 @@ export default function AssignPanel({
             : eligibleZones.map(z => {
               const checked  = assignedZoneIds.has(z.id);
               const other    = assignedMap[z.id];
-              const disabled = other && !checked; // 다른 기사 배정 + 내가 미체크 시만 비활성
+              const disabled = other && !checked;
               const qty      = getQty(z, d.shift);
               const icon     = d.shift==='night'?'🌙':'☀️';
-              const isExtra  = z.camp !== d.camp; // 다른 캠프 구역 표시
+              const isExtra  = z.camp !== d.camp;
               return (
                 <label key={z.id} className="cb-item" style={{ opacity: disabled ? .4 : 1 }}>
                   <input type="checkbox" checked={checked} disabled={disabled}
@@ -275,7 +232,6 @@ export default function AssignPanel({
     );
   };
 
-  /* ── 기사 아이템 렌더 ── */
   const renderDriverItem = (d) => {
     const isSelected = selectedDriverId === d.id;
     return (
@@ -297,32 +253,14 @@ export default function AssignPanel({
     );
   };
 
-  /* ── 구분선 ── */
-  const divider = (label, color) => (
-    <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 8px', margin:'4px 0 2px' }}>
-      <div style={{ flex:1, height:1, background:color, opacity:.4 }} />
-      <span style={{ fontSize:11, color, fontWeight:700, whiteSpace:'nowrap' }}>{label}</span>
-      <div style={{ flex:1, height:1, background:color, opacity:.4 }} />
-    </div>
-  );
-
-  const shiftHeader = (shift, total, isFirst) => (
-    <div style={{
-      padding:'8px 8px 4px',
-      marginTop: isFirst ? 0 : 8,
-      fontSize:12, fontWeight:800, color:'var(--text)',
-      borderTop: isFirst ? 'none' : '1px solid var(--border)',
-      paddingTop: isFirst ? 4 : 12,
-    }}>
-      {shift==='day'?'☀️ 주간':'🌙 야간'}
-      <span style={{ fontSize:11, fontWeight:400, color:'var(--text2)', marginLeft:6 }}>{total}명</span>
-    </div>
+  const sortDrivers = (arr) => arr.slice().sort((a,b) =>
+    sortMode==='qty'
+      ? getDriverTotal(b)-getDriverTotal(a)
+      : a.name.localeCompare(b.name,'ko')
   );
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
-
-      {/* 상단 */}
       <div style={{ padding:'10px 10px 8px', borderBottom:'1px solid var(--border)', flexShrink:0, display:'flex', flexDirection:'column', gap:7 }}>
         <div style={{ fontSize:10, fontWeight:700, color:'var(--text2)', letterSpacing:'.8px', textTransform:'uppercase' }}>기사별 배송구역</div>
 
@@ -352,29 +290,20 @@ export default function AssignPanel({
           <button className={`sort-btn ${sortMode==='name'?'active':''}`} onClick={()=>setSortMode('name')}>가나다순</button>
           <button className={`sort-btn ${sortMode==='qty'?'active':''}`}  onClick={()=>setSortMode('qty')}>수량순</button>
         </div>
-
         <div className="sort-row">
           <button className={`sort-btn ${filterType==='fixed'?'active':''}`} onClick={()=>setFilterType('fixed')}>고정기사</button>
           <button className={`sort-btn ${filterType==='backup'?'active':''}`} onClick={()=>setFilterType('backup')}>백업기사</button>
         </div>
       </div>
 
-      {/* 목록 */}
       <div className="sb-list">
         {filteredDrivers.length === 0
           ? <div className="empty"><div className="empty-icon">👤</div><div className="empty-text">기사를 먼저 등록하세요.</div></div>
           : (() => {
-            const pinned = selectedDriverId
-              ? filteredDrivers.filter(d => d.id === selectedDriverId)
-              : [];
-            const rest = filteredDrivers.filter(d => d.id !== selectedDriverId);
+            const pinned     = selectedDriverId ? filteredDrivers.filter(d => d.id === selectedDriverId) : [];
+            const rest       = filteredDrivers.filter(d => d.id !== selectedDriverId);
             const unassigned = rest.filter(d => !(d.zones||[]).length);
             const assigned   = rest.filter(d =>  (d.zones||[]).length > 0);
-            const sortDrivers = (arr) => arr.slice().sort((a,b) =>
-              sortMode==='qty'
-                ? getDriverTotal(b)-getDriverTotal(a)
-                : a.name.localeCompare(b.name,'ko')
-            );
             return (<>
               {pinned.map(renderDriverItem)}
               {unassigned.length > 0 &&

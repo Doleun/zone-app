@@ -15,9 +15,6 @@ import MapView from './components/MapView';
 import Toast from './components/Toast';
 import './index.css';
 
-/* ══════════════════════════════════════
-   색상 팔레트
-══════════════════════════════════════ */
 export const ZONE_COLORS = [
   '#ef4444','#f97316','#eab308','#22c55e','#14b8a6',
   '#3b82f6','#8b5cf6','#ec4899','#06b6d4','#a3e635',
@@ -29,36 +26,27 @@ export const DRIVER_COLORS = [
 ];
 
 export default function App() {
-  /* ── 인증 상태 ── */
-  const [authState, setAuthState] = useState('loading');
-  const [currentUser, setCurrentUser] = useState(null);
-  const [currentRole, setCurrentRole] = useState(null);
+  const [authState,        setAuthState]        = useState('loading');
+  const [currentUser,      setCurrentUser]      = useState(null);
+  const [currentRole,      setCurrentRole]      = useState(null);
 
-  /* ── 데이터 ── */
   const [zones,   setZones]   = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [regions, setRegions] = useState([]);
   const [camps,   setCamps]   = useState([]);
   const [users,   setUsers]   = useState([]);
 
-  /* ── UI 상태 ── */
   const [curTab,           setCurTab]           = useState('zone');
   const [saveState,        setSaveState]        = useState('');
   const [toast,            setToast]            = useState(null);
   const [colorIndex,       setColorIndex]       = useState(0);
   const [selectedDriverId, setSelectedDriverId] = useState(null);
 
-  /* ── 구역 그리기 상태 ── */
   const [drawMode,       setDrawMode]       = useState(false);
-  const [pendingLatlngs, setPendingLatlngs] = useState(null); // 완료된 폴리곤 좌표
+  const [pendingLatlngs, setPendingLatlngs] = useState(null);
 
-  /* ── 구역 가시성 ── */
-  const [hiddenZones, setHiddenZones] = useState(new Set());
-
-  /* ── 구역 포커스 (목록 클릭 시 지도 이동) ── */
-  const [focusZoneId, setFocusZoneId] = useState(null);
-
-  /* ── 기사 포커스 (하이라이트 트리거) ── */
+  const [hiddenZones,   setHiddenZones]   = useState(new Set());
+  const [focusZoneId,   setFocusZoneId]   = useState(null);
   const [focusDriverId, setFocusDriverId] = useState(null);
 
   /* ── 인증 ── */
@@ -67,9 +55,8 @@ export default function App() {
       if (!user) { setAuthState('login'); return; }
       const snap = await getUserDoc(user.email);
       if (!snap.exists()) { setAuthState('denied'); return; }
-      const role = snap.data().role;
       setCurrentUser(user);
-      setCurrentRole(role);
+      setCurrentRole(snap.data().role);
       setAuthState('app');
     });
   }, []);
@@ -98,7 +85,7 @@ export default function App() {
       showToast('❌ 저장 실패: ' + e.message);
       setSaveState('');
     }
-  }, [zones, drivers]);
+  }, [zones, drivers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── 토스트 ── */
   const showToast = useCallback((msg) => {
@@ -113,47 +100,29 @@ export default function App() {
     return color;
   }, [colorIndex]);
 
-  /* ── 그리기 완료 콜백 ── */
+  /* ── 그리기 완료 ── */
   const handleDrawComplete = useCallback((latlngs) => {
     setPendingLatlngs(latlngs);
     setDrawMode(false);
   }, []);
 
-  /* ── 배송구역 탭: 백업기사 선택 중 지도에서 고정기사 토글 ── */
-  const handleBackupFixedToggle = useCallback(async (fixedDriverId) => {
-    if (!selectedDriverId) return;
-    const backup = drivers.find(d => d.id === selectedDriverId);
-    if (!backup || backup.type !== 'backup') return;
+  /* ── 탭 전환 시 그리기 모드 해제 ── */
+  useEffect(() => {
+    if (drawMode) { setDrawMode(false); setPendingLatlngs(null); }
+  }, [curTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const sel = backup.selectedFixed || [];
-    const checked = !sel.includes(fixedDriverId);
-    const newSel = checked ? [...sel, fixedDriverId] : sel.filter(id => id !== fixedDriverId);
-    const allZoneIds = newSel.length > 0
-      ? [...new Set(drivers.filter(d => newSel.includes(d.id)).flatMap(d => d.zones||[]))]
-      : [];
-    const newDrivers = drivers.map(d =>
-      d.id === selectedDriverId ? { ...d, selectedFixed: newSel, zones: allZoneIds } : d
-    );
-    setDrivers(newDrivers);
-    await handleSave(null, newDrivers);
-  }, [selectedDriverId, drivers, handleSave]);
+  /* ── 배송할당: 지도에서 구역 토글 (고정기사) ── */
   const handleAssignZoneToggle = useCallback(async (zoneId) => {
     if (!selectedDriverId) return;
-    const currentDriver = drivers.find(d => d.id === selectedDriverId);
-    const isAssigned = (currentDriver?.zones || []).includes(zoneId);
+    const cur = drivers.find(d => d.id === selectedDriverId);
+    const isAssigned = (cur?.zones || []).includes(zoneId);
 
-    // 미배정 → 다른 기사가 이미 배정한 구역이면 차단
     if (!isAssigned) {
-      const otherDriver = drivers.find(d =>
-        d.id !== selectedDriverId &&
-        d.type === 'fixed' &&
-        d.shift === currentDriver?.shift &&
-        (d.zones || []).includes(zoneId)
+      const other = drivers.find(d =>
+        d.id !== selectedDriverId && d.type === 'fixed' &&
+        d.shift === cur?.shift && (d.zones || []).includes(zoneId)
       );
-      if (otherDriver) {
-        showToast(`❌ ${otherDriver.name}에게 배정된 구역입니다`);
-        return;
-      }
+      if (other) { showToast(`❌ ${other.name}에게 배정된 구역입니다`); return; }
     }
 
     const newDrivers = drivers.map(d => {
@@ -161,21 +130,37 @@ export default function App() {
       const newZones = isAssigned
         ? (d.zones || []).filter(id => id !== zoneId)
         : [...(d.zones || []), zoneId];
-      // 구역 전부 해제되면 레이블 위치 초기화
-      const labelPos = newZones.length === 0 ? null : d.labelPos;
-      return { ...d, zones: newZones, labelPos };
+      return { ...d, zones: newZones, labelPos: newZones.length === 0 ? null : d.labelPos };
     });
     setDrivers(newDrivers);
     await handleSave(null, newDrivers);
   }, [selectedDriverId, drivers, handleSave, showToast]);
 
-  /* ── 탭 전환 시 그리기 모드 해제 ── */
-  useEffect(() => {
-    if (drawMode) {
-      setDrawMode(false);
-      setPendingLatlngs(null);
-    }
-  }, [curTab]);
+  /* ── 배송할당: 지도에서 고정기사 토글 (백업기사용) ── */
+  const handleBackupFixedToggle = useCallback(async (fixedDriverId) => {
+    if (!selectedDriverId) return;
+    const backup = drivers.find(d => d.id === selectedDriverId);
+    if (!backup || backup.type !== 'backup') return;
+
+    const sel = backup.selectedFixed || [];
+    const newSel = sel.includes(fixedDriverId)
+      ? sel.filter(id => id !== fixedDriverId)
+      : [...sel, fixedDriverId];
+    const allZoneIds = newSel.length > 0
+      ? [...new Set(drivers.filter(d => newSel.includes(d.id)).flatMap(d => d.zones || []))]
+      : [];
+    const newDrivers = drivers.map(d =>
+      d.id === selectedDriverId ? { ...d, selectedFixed: newSel, zones: allZoneIds } : d
+    );
+    setDrivers(newDrivers);
+    await handleSave(null, newDrivers);
+  }, [selectedDriverId, drivers, handleSave]);
+
+  /* ── 기사 선택 (focusDriverId 포함) ── */
+  const selectDriver = useCallback((id) => {
+    setSelectedDriverId(id);
+    if (id) setFocusDriverId({ id, ts: Date.now() });
+  }, []);
 
   /* ── 로그인/로그아웃 ── */
   const googleLogin = async () => {
@@ -191,10 +176,8 @@ export default function App() {
     currentUser, currentRole,
     onSave: handleSave,
     showToast, nextColor,
-    DRIVER_COLORS,
   };
 
-  /* ── 로딩 ── */
   if (authState === 'loading') return (
     <div className="loading-screen">
       <div className="loading-spinner" />
@@ -202,7 +185,6 @@ export default function App() {
     </div>
   );
 
-  /* ── 로그인 ── */
   if (authState === 'login') return (
     <div className="login-screen">
       <div className="login-box">
@@ -222,7 +204,6 @@ export default function App() {
     </div>
   );
 
-  /* ── 접근 거부 ── */
   if (authState === 'denied') return (
     <div className="denied-screen">
       <div className="denied-box">
@@ -238,27 +219,17 @@ export default function App() {
     </div>
   );
 
-  /* ── 메인 앱 ── */
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh' }}>
       <Header
-        curTab={curTab}
-        setCurTab={setCurTab}
-        currentUser={currentUser}
-        currentRole={currentRole}
+        curTab={curTab} setCurTab={setCurTab}
+        currentUser={currentUser} currentRole={currentRole}
         saveState={saveState}
-        zones={zones}
-        drivers={drivers}
-        regions={regions}
-        camps={camps}
-        users={users}
-        onSave={handleSave}
-        showToast={showToast}
-        logout={logout}
+        zones={zones} drivers={drivers} regions={regions} camps={camps} users={users}
+        onSave={handleSave} showToast={showToast} logout={logout}
       />
 
       <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
-        {/* 사이드바 */}
         <div style={{
           width:290, background:'var(--sidebar)',
           borderRight:'1px solid var(--border)',
@@ -267,49 +238,31 @@ export default function App() {
         }}>
           {curTab === 'zone'   && <ZonePanel
             {...commonProps}
-            drawMode={drawMode}
-            setDrawMode={setDrawMode}
-            pendingLatlngs={pendingLatlngs}
-            setPendingLatlngs={setPendingLatlngs}
-            hiddenZones={hiddenZones}
-            setHiddenZones={setHiddenZones}
+            drawMode={drawMode} setDrawMode={setDrawMode}
+            pendingLatlngs={pendingLatlngs} setPendingLatlngs={setPendingLatlngs}
+            hiddenZones={hiddenZones} setHiddenZones={setHiddenZones}
             setFocusZoneId={setFocusZoneId}
           />}
-          {curTab === 'drvreg' && <DriverRegPanel    {...commonProps} />}
+          {curTab === 'drvreg' && <DriverRegPanel {...commonProps} />}
           {curTab === 'assign' && <AssignPanel
             {...commonProps}
             selectedDriverId={selectedDriverId}
-            setSelectedDriverId={(id) => {
-              setSelectedDriverId(id);
-              if (id) setFocusDriverId({ id, ts: Date.now() });
-            }}
+            setSelectedDriverId={selectDriver}
           />}
-          {curTab === 'rc'     && <RegionCampPanel   {...commonProps} />}
+          {curTab === 'rc'     && <RegionCampPanel {...commonProps} />}
         </div>
 
-        {/* 지도 */}
         <MapView
           curTab={curTab}
-          zones={zones}
-          drivers={drivers}
-          regions={regions}
-          camps={camps}
-          onSave={handleSave}
-          showToast={showToast}
-          nextColor={nextColor}
-          setZones={setZones}
-          setDrivers={setDrivers}
+          zones={zones} drivers={drivers}
+          onSave={handleSave} showToast={showToast}
+          setZones={setZones} setDrivers={setDrivers}
           selectedDriverId={selectedDriverId}
-          setSelectedDriverId={(id) => {
-              setSelectedDriverId(id);
-              if (id) setFocusDriverId({ id, ts: Date.now() });
-            }}
-          drawMode={drawMode}
-          onDrawComplete={handleDrawComplete}
+          setSelectedDriverId={selectDriver}
+          drawMode={drawMode} onDrawComplete={handleDrawComplete}
           pendingLatlngs={pendingLatlngs}
           hiddenZones={hiddenZones}
-          focusZoneId={focusZoneId}
-          setFocusZoneId={setFocusZoneId}
+          focusZoneId={focusZoneId} setFocusZoneId={setFocusZoneId}
           focusDriverId={focusDriverId}
           onAssignZoneToggle={handleAssignZoneToggle}
           onBackupFixedToggle={handleBackupFixedToggle}

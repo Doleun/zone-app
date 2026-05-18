@@ -1,35 +1,21 @@
 import { useState, useMemo } from 'react';
 
-/* ══════════════════════════════════════
-   DriverRegPanel
-   - 기사 기본 정보 등록/편집/삭제
-   - 유형: 고정(캠프 단수) / 백업(캠프 복수)
-   - 교대: 주간 / 야간
-   - 지역/캠프/교대 필터
-══════════════════════════════════════ */
 export default function DriverRegPanel({
   zones, drivers, setDrivers,
   regions, camps,
   onSave, showToast,
 }) {
-  /* ── 필터 ── */
   const [filterRegion, setFilterRegion] = useState('');
   const [filterCamp,   setFilterCamp]   = useState('');
   const [filterShift,  setFilterShift]  = useState('');
+  const [showModal,    setShowModal]    = useState(false);
+  const [editId,       setEditId]       = useState(null);
+  const [form, setForm] = useState({ name:'', type:'fixed', shift:'day', region:'', camp:'', camps:[] });
 
-  /* ── 모달 ── */
-  const [showModal, setShowModal] = useState(false);
-  const [editId,    setEditId]    = useState(null);
-  const [form, setForm] = useState({
-    name:'', type:'fixed', shift:'day', region:'', camp:'', camps:[],
-  });
-
-  /* ── 필터링된 캠프 ── */
   const filteredCamps = useMemo(() =>
     filterRegion ? camps.filter(c=>c.region===filterRegion) : camps,
     [camps, filterRegion]);
 
-  /* ── 필터링된 기사 ── */
   const filteredDrivers = useMemo(() => {
     return [...drivers].filter(d => {
       if (filterRegion && d.region !== filterRegion) return false;
@@ -42,12 +28,10 @@ export default function DriverRegPanel({
     }).sort((a,b) => a.name.localeCompare(b.name,'ko'));
   }, [drivers, filterRegion, filterCamp, filterShift]);
 
-  /* ── 모달 캠프 옵션 ── */
   const modalCamps = useMemo(() =>
     form.region ? camps.filter(c=>c.region===form.region) : [],
     [camps, form.region]);
 
-  /* ── 모달 열기 ── */
   const openModal = (driver=null) => {
     if (driver) {
       setForm({
@@ -66,7 +50,6 @@ export default function DriverRegPanel({
     setShowModal(true);
   };
 
-  /* ── 저장 ── */
   const saveDriver = async () => {
     if (!form.name.trim()) { showToast('기사 이름을 입력하세요'); return; }
     let newDrivers;
@@ -93,11 +76,9 @@ export default function DriverRegPanel({
     showToast('✅ 저장 완료');
   };
 
-  /* ── 삭제 ── */
+  /* ── 삭제: 백업기사 selectedFixed 정리 + 구역 재계산 ── */
   const deleteDriver = async (did) => {
     if (!window.confirm('이 기사를 삭제할까요?')) return;
-
-    // 삭제된 기사 ID를 백업기사 selectedFixed에서 제거 + 구역 재계산
     const remaining = drivers.filter(d => d.id !== did);
     const newDrivers = remaining.map(d => {
       if (d.type !== 'backup') return d;
@@ -106,29 +87,22 @@ export default function DriverRegPanel({
       const allZoneIds = newSel.length > 0
         ? [...new Set(remaining.filter(fd => newSel.includes(fd.id)).flatMap(fd => fd.zones || []))]
         : [];
-      const labelPos = allZoneIds.length === 0 ? null : d.labelPos;
-      return { ...d, selectedFixed: newSel, zones: allZoneIds, labelPos };
+      return { ...d, selectedFixed: newSel, zones: allZoneIds, labelPos: allZoneIds.length === 0 ? null : d.labelPos };
     });
-
     setDrivers(newDrivers);
     await onSave(null, newDrivers);
     showToast('✅ 삭제 완료');
   };
 
-  /* ── 백업 캠프 체크박스 토글 ── */
   const toggleBackupCamp = (campId) => {
-    setForm(f => {
-      const camps = f.camps.includes(campId)
-        ? f.camps.filter(c=>c!==campId)
-        : [...f.camps, campId];
-      return { ...f, camps };
-    });
+    setForm(f => ({
+      ...f,
+      camps: f.camps.includes(campId) ? f.camps.filter(c=>c!==campId) : [...f.camps, campId],
+    }));
   };
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
-
-      {/* 상단 */}
       <div style={{ padding:'10px 10px 8px', borderBottom:'1px solid var(--border)', flexShrink:0, display:'flex', flexDirection:'column', gap:7 }}>
         <div style={{ fontSize:10, fontWeight:700, color:'var(--text2)', letterSpacing:'.8px', textTransform:'uppercase' }}>기사 등록</div>
 
@@ -153,7 +127,6 @@ export default function DriverRegPanel({
         <button className="btn btn-primary" onClick={()=>openModal()}>👤 기사 등록</button>
       </div>
 
-      {/* 목록 */}
       <div className="sb-list">
         {filteredDrivers.length === 0
           ? <div className="empty"><div className="empty-icon">👤</div><div className="empty-text">등록된 기사가 없습니다.<br/>"기사 등록"으로 추가하세요.</div></div>
@@ -184,7 +157,6 @@ export default function DriverRegPanel({
         }
       </div>
 
-      {/* 기사 등록/편집 모달 */}
       {showModal && (
         <div className="overlay" onClick={()=>setShowModal(false)}>
           <div className="modal" onClick={e=>e.stopPropagation()}>
@@ -196,7 +168,6 @@ export default function DriverRegPanel({
                 onChange={e=>setForm(f=>({...f,name:e.target.value}))}
                 onKeyDown={e=>e.key==='Enter'&&saveDriver()} />
             </div>
-
             <div className="field">
               <label className="field-label">유형</label>
               <select className="field-input" value={form.type}
@@ -205,7 +176,6 @@ export default function DriverRegPanel({
                 <option value="backup">백업</option>
               </select>
             </div>
-
             <div className="field">
               <label className="field-label">교대</label>
               <select className="field-input" value={form.shift}
@@ -214,7 +184,6 @@ export default function DriverRegPanel({
                 <option value="night">🌙 야간</option>
               </select>
             </div>
-
             <div className="field">
               <label className="field-label">지역</label>
               <select className="field-input" value={form.region}
