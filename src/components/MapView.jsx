@@ -21,6 +21,7 @@ export default function MapView({
   setFocusZoneId,
   focusDriverId,
   onAssignZoneToggle,
+  onBackupFixedToggle,
 }) {
   const mapRef                = useRef(null);
   const mapInstance           = useRef(null);
@@ -37,12 +38,16 @@ export default function MapView({
   const drawLineRef    = useRef(null);
   const drawPreviewRef = useRef(null);
   const drawModeRef    = useRef(false);
-  const onAssignZoneToggleRef = useRef(onAssignZoneToggle); // 항상 최신 콜백 참조
+  const selectedDriverIdRef = useRef(null); // 클릭 핸들러에서 최신 selectedDriverId 참조
+  const onAssignZoneToggleRef = useRef(onAssignZoneToggle);
+  const onBackupFixedToggleRef = useRef(onBackupFixedToggle);
 
   const [drawCount, setDrawCount] = useState(0);
 
   useEffect(() => { drawModeRef.current = drawMode; }, [drawMode]);
+  useEffect(() => { selectedDriverIdRef.current = selectedDriverId; }, [selectedDriverId]);
   useEffect(() => { onAssignZoneToggleRef.current = onAssignZoneToggle; }, [onAssignZoneToggle]);
+  useEffect(() => { onBackupFixedToggleRef.current = onBackupFixedToggle; }, [onBackupFixedToggle]);
 
   /* ── 지도 초기화 ── */
   useEffect(() => {
@@ -577,8 +582,13 @@ export default function MapView({
         polys.forEach((lls, i) => {
           const poly = L.polygon(lls, { color, fillColor:color, fillOpacity:opacity, weight });
           poly.on('click', () => {
-            setSelectedDriverId(driver.id);
-            // focusDriverId는 App에서 setSelectedDriverId 래퍼가 처리
+            const curSel = selectedDriverIdRef.current;
+            const curDriver = drivers.find(d => d.id === curSel);
+            if (curDriver?.type === 'backup' && driver.type === 'fixed') {
+              onBackupFixedToggleRef.current?.(driver.id);
+            } else {
+              setSelectedDriverId(driver.id);
+            }
           });
           driverLayerRef.current.addLayer(poly);
           driverPolysRef.current[driver.id]?.polys.push(poly);
@@ -587,7 +597,15 @@ export default function MapView({
               ? L.latLng(driver.labelPos.lat, driver.labelPos.lng)
               : centroid(lls.map(p => ({ lat:p.lat, lng:p.lng })));
             const label = L.marker(pos, { icon: makeDriverIcon(driver, total), draggable:true, zIndexOffset:1000 }).addTo(map);
-            label.on('click', () => setSelectedDriverId(driver.id));
+            label.on('click', () => {
+              const curSel = selectedDriverIdRef.current;
+              const curDriver = drivers.find(d => d.id === curSel);
+              if (curDriver?.type === 'backup' && driver.type === 'fixed') {
+                onBackupFixedToggleRef.current?.(driver.id);
+              } else {
+                setSelectedDriverId(driver.id);
+              }
+            });
             label.on('dragend', async () => {
               const p = label.getLatLng();
               const newDrivers = drivers.map(d =>
@@ -602,7 +620,15 @@ export default function MapView({
       } catch(e) {
         dZones.forEach(z => {
           const poly = L.polygon(z.latlngs.map(p => L.latLng(p.lat, p.lng)), { color, fillColor:color, fillOpacity:opacity, weight });
-          poly.on('click', () => setSelectedDriverId(driver.id));
+          poly.on('click', () => {
+            const curSel = selectedDriverIdRef.current;
+            const curDriver = drivers.find(d => d.id === curSel);
+            if (curDriver?.type === 'backup' && driver.type === 'fixed') {
+              onBackupFixedToggleRef.current?.(driver.id);
+            } else {
+              setSelectedDriverId(driver.id);
+            }
+          });
           driverLayerRef.current.addLayer(poly);
           driverPolysRef.current[driver.id]?.polys.push(poly);
         });
@@ -610,7 +636,15 @@ export default function MapView({
           ? L.latLng(driver.labelPos.lat, driver.labelPos.lng)
           : centroid(dZones[0].latlngs);
         const label = L.marker(pos, { icon: makeDriverIcon(driver, total), draggable:true, zIndexOffset:1000 }).addTo(map);
-        label.on('click', () => setSelectedDriverId(driver.id));
+        label.on('click', () => {
+          const curSel = selectedDriverIdRef.current;
+          const curDriver = drivers.find(d => d.id === curSel);
+          if (curDriver?.type === 'backup' && driver.type === 'fixed') {
+            onBackupFixedToggleRef.current?.(driver.id);
+          } else {
+            setSelectedDriverId(driver.id);
+          }
+        });
         label.on('dragend', async () => {
           const p = label.getLatLng();
           const newDrivers = drivers.map(d =>

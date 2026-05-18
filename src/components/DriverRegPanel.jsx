@@ -96,7 +96,20 @@ export default function DriverRegPanel({
   /* ── 삭제 ── */
   const deleteDriver = async (did) => {
     if (!window.confirm('이 기사를 삭제할까요?')) return;
-    const newDrivers = drivers.filter(d => d.id !== did);
+
+    // 삭제된 기사 ID를 백업기사 selectedFixed에서 제거 + 구역 재계산
+    const remaining = drivers.filter(d => d.id !== did);
+    const newDrivers = remaining.map(d => {
+      if (d.type !== 'backup') return d;
+      const newSel = (d.selectedFixed || []).filter(id => id !== did);
+      if (newSel.length === (d.selectedFixed || []).length) return d;
+      const allZoneIds = newSel.length > 0
+        ? [...new Set(remaining.filter(fd => newSel.includes(fd.id)).flatMap(fd => fd.zones || []))]
+        : [];
+      const labelPos = allZoneIds.length === 0 ? null : d.labelPos;
+      return { ...d, selectedFixed: newSel, zones: allZoneIds, labelPos };
+    });
+
     setDrivers(newDrivers);
     await onSave(null, newDrivers);
     showToast('✅ 삭제 완료');
@@ -119,7 +132,6 @@ export default function DriverRegPanel({
       <div style={{ padding:'10px 10px 8px', borderBottom:'1px solid var(--border)', flexShrink:0, display:'flex', flexDirection:'column', gap:7 }}>
         <div style={{ fontSize:10, fontWeight:700, color:'var(--text2)', letterSpacing:'.8px', textTransform:'uppercase' }}>기사 등록</div>
 
-        {/* 필터 */}
         <div className="filter-row">
           <select className="filter-select" value={filterRegion} onChange={e=>{setFilterRegion(e.target.value);setFilterCamp('');}}>
             <option value="">전체 지역</option>
@@ -181,7 +193,8 @@ export default function DriverRegPanel({
             <div className="field">
               <label className="field-label">기사명</label>
               <input className="field-input" value={form.name} placeholder="이름 입력"
-                onChange={e=>setForm(f=>({...f,name:e.target.value}))} />
+                onChange={e=>setForm(f=>({...f,name:e.target.value}))}
+                onKeyDown={e=>e.key==='Enter'&&saveDriver()} />
             </div>
 
             <div className="field">
@@ -211,7 +224,6 @@ export default function DriverRegPanel({
               </select>
             </div>
 
-            {/* 고정기사: 캠프 단수 */}
             {form.type === 'fixed' && (
               <div className="field">
                 <label className="field-label">캠프</label>
@@ -223,7 +235,6 @@ export default function DriverRegPanel({
               </div>
             )}
 
-            {/* 백업기사: 캠프 복수 */}
             {form.type === 'backup' && (
               <div className="field">
                 <label className="field-label">담당 캠프 (복수 선택)</label>

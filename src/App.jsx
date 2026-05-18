@@ -119,7 +119,24 @@ export default function App() {
     setDrawMode(false);
   }, []);
 
-  /* ── 배송구역 탭: 지도에서 구역 토글 ── */
+  /* ── 배송구역 탭: 백업기사 선택 중 지도에서 고정기사 토글 ── */
+  const handleBackupFixedToggle = useCallback(async (fixedDriverId) => {
+    if (!selectedDriverId) return;
+    const backup = drivers.find(d => d.id === selectedDriverId);
+    if (!backup || backup.type !== 'backup') return;
+
+    const sel = backup.selectedFixed || [];
+    const checked = !sel.includes(fixedDriverId);
+    const newSel = checked ? [...sel, fixedDriverId] : sel.filter(id => id !== fixedDriverId);
+    const allZoneIds = newSel.length > 0
+      ? [...new Set(drivers.filter(d => newSel.includes(d.id)).flatMap(d => d.zones||[]))]
+      : [];
+    const newDrivers = drivers.map(d =>
+      d.id === selectedDriverId ? { ...d, selectedFixed: newSel, zones: allZoneIds } : d
+    );
+    setDrivers(newDrivers);
+    await handleSave(null, newDrivers);
+  }, [selectedDriverId, drivers, handleSave]);
   const handleAssignZoneToggle = useCallback(async (zoneId) => {
     if (!selectedDriverId) return;
     const currentDriver = drivers.find(d => d.id === selectedDriverId);
@@ -295,6 +312,7 @@ export default function App() {
           setFocusZoneId={setFocusZoneId}
           focusDriverId={focusDriverId}
           onAssignZoneToggle={handleAssignZoneToggle}
+          onBackupFixedToggle={handleBackupFixedToggle}
         />
       </div>
 

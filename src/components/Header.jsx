@@ -1,15 +1,7 @@
 import { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { getAllForBackup, restoreBackup, setUserDoc, deleteUserDoc, getUserDoc } from '../firebase/db';
-import { DEFAULT_CONFIG } from '../firebase/config';
 
-/* ══════════════════════════════════════
-   Header
-   - 탭 전환
-   - 저장 인디케이터
-   - master 전용: 사용자관리, 백업/복원, Firebase설정, 이전매뉴얼
-   - 공통: Excel 내보내기/가져오기, 로그아웃
-══════════════════════════════════════ */
 export default function Header({
   curTab, setCurTab,
   currentUser, currentRole,
@@ -19,22 +11,9 @@ export default function Header({
 }) {
   const isMaster = currentRole === 'master';
 
-  const [showUserMgmt,   setShowUserMgmt]   = useState(false);
-  const [showFirebaseCfg, setShowFirebaseCfg] = useState(false);
-  const [showManual,     setShowManual]     = useState(false);
-  const [inviteEmail,    setInviteEmail]    = useState('');
-  const [inviteRole,     setInviteRole]     = useState('staff');
-  const [cfgFields,      setCfgFields]      = useState({
-    apiKey:'', authDomain:'', projectId:'', storageBucket:'', messagingSenderId:'', appId:'',
-  });
-
-  /* ── 탭 정의 ── */
-  const tabs = [
-    { key:'zone',   label:'구역 관리' },
-    { key:'drvreg', label:'기사 등록' },
-    { key:'assign', label:'배송구역' },
-    ...(isMaster ? [{ key:'rc', label:'캠프/지역' }] : []),
-  ];
+  const [showUserMgmt,    setShowUserMgmt]    = useState(false);
+  const [inviteEmail,     setInviteEmail]     = useState('');
+  const [inviteRole,      setInviteRole]      = useState('staff');
 
   /* ── Excel 내보내기 ── */
   const exportExcel = () => {
@@ -94,11 +73,7 @@ export default function Header({
   const exportBackup = async () => {
     try {
       const { users: u, regions: r, camps: c } = await getAllForBackup();
-      const backup = {
-        exportedAt: new Date().toISOString(),
-        zones, drivers,
-        users: u, regions: r, camps: c,
-      };
+      const backup = { exportedAt: new Date().toISOString(), zones, drivers, users: u, regions: r, camps: c };
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type:'application/json' }));
       a.download = `backup_${new Date().toISOString().slice(0,10)}.json`;
@@ -158,31 +133,17 @@ export default function Header({
     catch(e) { showToast('❌ 삭제 실패: ' + e.message); }
   };
 
-  /* ── Firebase 설정 저장 ── */
-  const saveFirebaseCfg = () => {
-    const fields = ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'];
-    for (const f of fields) {
-      if (!cfgFields[f]) { showToast(`❌ ${f} 값을 입력하세요`); return; }
-    }
-    localStorage.setItem('zone-firebase-config', JSON.stringify(cfgFields));
-    showToast('✅ 설정 저장 — 새로고침합니다');
-    setTimeout(() => location.reload(), 1200);
-  };
-  const resetFirebaseCfg = () => {
-    if (!window.confirm('기본값으로 초기화할까요?')) return;
-    localStorage.removeItem('zone-firebase-config');
-    setTimeout(() => location.reload(), 1200);
-  };
-  const openFirebaseCfg = () => {
-    try {
-      const saved = localStorage.getItem('zone-firebase-config');
-      if (saved) setCfgFields(JSON.parse(saved));
-    } catch(e) {}
-    setShowFirebaseCfg(true);
-  };
-
-  /* ── 저장 인디케이터 텍스트 ── */
+  /* ── 저장 인디케이터 ── */
   const saveText = saveState === 'saving' ? '● 저장 중...' : saveState === 'saved' ? '● 저장됨' : '●';
+
+  /* ── 탭 버튼 스타일 ── */
+  const tabStyle = (key) => ({
+    padding:'6px 13px', borderRadius:7, border:'none',
+    background: curTab === key ? 'var(--accent)' : 'transparent',
+    color: curTab === key ? '#fff' : 'var(--text2)',
+    fontFamily:'Noto Sans KR, sans-serif', fontSize:12,
+    fontWeight:600, cursor:'pointer', whiteSpace:'nowrap',
+  });
 
   return (
     <>
@@ -204,18 +165,14 @@ export default function Header({
             {currentUser?.displayName || currentUser?.email}
           </span>
 
-          {/* master 전용 */}
           {isMaster && <>
             <button className="hbtn" onClick={() => setShowUserMgmt(true)}>👥 사용자</button>
             <button className="hbtn" onClick={exportBackup}>💾 백업</button>
             <label className="hbtn" style={{ cursor:'pointer' }}>
               📂 복원<input type="file" accept=".json" onChange={importBackup} style={{ display:'none' }} />
             </label>
-            <button className="hbtn" onClick={openFirebaseCfg}>⚙️ Firebase</button>
-            <button className="hbtn" onClick={() => setShowManual(true)}>📋 이전 매뉴얼</button>
           </>}
 
-          {/* 공통 */}
           <button className="hbtn" onClick={exportExcel}>📥 Excel 내보내기</button>
           <label className="hbtn" style={{ cursor:'pointer' }}>
             📤 Excel 가져오기<input type="file" accept=".xlsx,.xls" onChange={importExcel} style={{ display:'none' }} />
@@ -223,20 +180,18 @@ export default function Header({
           <button className="logout-btn" onClick={logout}>로그아웃</button>
         </div>
 
-        {/* 탭 */}
-        <div style={{ display:'flex', gap:3, marginLeft:'auto', flexShrink:0 }}>
-          {tabs.map(t => (
-            <button key={t.key}
-              onClick={() => setCurTab(t.key)}
-              style={{
-                padding:'6px 13px', borderRadius:7, border:'none',
-                background: curTab === t.key ? 'var(--accent)' : 'transparent',
-                color: curTab === t.key ? '#fff' : 'var(--text2)',
-                fontFamily:'Noto Sans KR, sans-serif', fontSize:12,
-                fontWeight:600, cursor:'pointer', whiteSpace:'nowrap',
-              }}
-            >{t.label}</button>
-          ))}
+        {/* 탭 - 등록 그룹 | 구분선 | 할당 그룹 */}
+        <div style={{ display:'flex', gap:3, marginLeft:'auto', flexShrink:0, alignItems:'center' }}>
+          {/* 등록 그룹 */}
+          {isMaster && <button style={tabStyle('rc')} onClick={() => setCurTab('rc')}>캠프/지역</button>}
+          <button style={tabStyle('drvreg')} onClick={() => setCurTab('drvreg')}>기사</button>
+          <button style={tabStyle('zone')} onClick={() => setCurTab('zone')}>구역</button>
+
+          {/* 구분선 */}
+          <div style={{ width:1, height:20, background:'var(--border)', margin:'0 8px', flexShrink:0, opacity:.6 }} />
+
+          {/* 할당 그룹 */}
+          <button style={tabStyle('assign')} onClick={() => setCurTab('assign')}>배송할당</button>
         </div>
       </div>
 
@@ -290,58 +245,6 @@ export default function Header({
         </div>
       )}
 
-      {/* ── Firebase 설정 모달 ── */}
-      {showFirebaseCfg && (
-        <div className="overlay" onClick={() => setShowFirebaseCfg(false)}>
-          <div className="modal" style={{ maxWidth:440 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-title">⚙️ Firebase 설정 변경</div>
-            <div style={{ fontSize:11, color:'var(--text2)', marginBottom:14, lineHeight:1.7 }}>
-              Firebase 프로젝트 이전 시 새 값으로 교체하세요.
-            </div>
-            {['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'].map(f => (
-              <div key={f} className="field">
-                <label className="field-label">{f}</label>
-                <input className="field-input" value={cfgFields[f]}
-                  onChange={e => setCfgFields(prev => ({ ...prev, [f]: e.target.value }))} />
-              </div>
-            ))}
-            <div className="modal-btns">
-              <button className="btn btn-secondary" onClick={resetFirebaseCfg}>기본값 초기화</button>
-              <button className="btn btn-secondary" onClick={() => setShowFirebaseCfg(false)}>취소</button>
-              <button className="btn btn-primary" onClick={saveFirebaseCfg}>저장 후 새로고침</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── 이전 매뉴얼 모달 ── */}
-      {showManual && (
-        <div className="overlay" style={{ alignItems:'flex-start', overflowY:'auto' }} onClick={() => setShowManual(false)}>
-          <div className="modal" style={{ maxWidth:600, width:'100%', margin:'auto' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-title">📋 Firebase 프로젝트 이전 매뉴얼</div>
-            <div style={{ fontSize:12, lineHeight:1.9 }}>
-              <div style={{ background:'var(--surface)', borderRadius:8, padding:'12px 14px', marginBottom:16, borderLeft:'3px solid var(--accent)' }}>
-                <b style={{ color:'var(--accent)' }}>⚠️ 이전 전 반드시 확인</b><br/>되돌릴 수 없습니다. 백업 먼저 진행하세요.
-              </div>
-              <b style={{ color:'var(--accent)' }}>STEP 1.</b> 💾 백업 버튼 → backup_날짜.json 보관<br/><br/>
-              <b style={{ color:'var(--accent)' }}>STEP 2.</b> 새 Firebase 프로젝트 생성 (Firestore Standard/서울/프로덕션, Google 로그인 ON, 웹 앱 등록)<br/><br/>
-              <b style={{ color:'var(--accent)' }}>STEP 3.</b> Firestore 보안 규칙 설정 (매뉴얼 내 코드 참고)<br/><br/>
-              <b style={{ color:'var(--accent)' }}>STEP 4.</b> <b style={{ color:'var(--red)' }}>필수</b> — Firestore users 컬렉션에 master 계정 등록<br/><br/>
-              <b style={{ color:'var(--accent)' }}>STEP 5.</b> ⚙️ Firebase 버튼 → 새 config 입력 → 저장<br/><br/>
-              <b style={{ color:'var(--accent)' }}>STEP 6.</b> 📂 복원 → backup_날짜.json 선택<br/><br/>
-              <b style={{ color:'var(--accent)' }}>STEP 7.</b> 👥 사용자 → staff 재초대<br/><br/>
-              <b style={{ color:'var(--accent)' }}>STEP 8.</b> PowerShell: firebase login --reauth → firebase use --add → firebase deploy
-              <div style={{ background:'var(--surface)', borderRadius:8, padding:'12px 14px', marginTop:16, borderLeft:'3px solid var(--green)' }}>
-                <b style={{ color:'var(--green)' }}>✅ 체크리스트</b><br/>
-                □ 백업 □ 새 프로젝트 □ 보안 규칙 □ master 등록 □ 설정 변경 □ 복원 □ 사용자 초대 □ 배포
-              </div>
-            </div>
-            <div className="modal-btns">
-              <button className="btn btn-secondary" onClick={() => setShowManual(false)}>닫기</button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }
