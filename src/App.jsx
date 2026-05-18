@@ -30,7 +30,7 @@ export const DRIVER_COLORS = [
 
 export default function App() {
   /* ── 인증 상태 ── */
-  const [authState, setAuthState] = useState('loading'); // loading | login | denied | app
+  const [authState, setAuthState] = useState('loading');
   const [currentUser, setCurrentUser] = useState(null);
   const [currentRole, setCurrentRole] = useState(null);
 
@@ -42,11 +42,18 @@ export default function App() {
   const [users,   setUsers]   = useState([]);
 
   /* ── UI 상태 ── */
-  const [curTab,          setCurTab]          = useState('zone');
-  const [saveState,       setSaveState]       = useState('');
-  const [toast,           setToast]           = useState(null);
-  const [colorIndex,      setColorIndex]      = useState(0);
+  const [curTab,           setCurTab]           = useState('zone');
+  const [saveState,        setSaveState]        = useState('');
+  const [toast,            setToast]            = useState(null);
+  const [colorIndex,       setColorIndex]       = useState(0);
   const [selectedDriverId, setSelectedDriverId] = useState(null);
+
+  /* ── 구역 그리기 상태 ── */
+  const [drawMode,       setDrawMode]       = useState(false);
+  const [pendingLatlngs, setPendingLatlngs] = useState(null); // 완료된 폴리곤 좌표
+
+  /* ── 구역 가시성 ── */
+  const [hiddenZones, setHiddenZones] = useState(new Set());
 
   /* ── 인증 ── */
   useEffect(() => {
@@ -99,6 +106,20 @@ export default function App() {
     setColorIndex(prev => prev + 1);
     return color;
   }, [colorIndex]);
+
+  /* ── 그리기 완료 콜백 ── */
+  const handleDrawComplete = useCallback((latlngs) => {
+    setPendingLatlngs(latlngs);
+    setDrawMode(false);
+  }, []);
+
+  /* ── 탭 전환 시 그리기 모드 해제 ── */
+  useEffect(() => {
+    if (drawMode) {
+      setDrawMode(false);
+      setPendingLatlngs(null);
+    }
+  }, [curTab]);
 
   /* ── 로그인/로그아웃 ── */
   const googleLogin = async () => {
@@ -188,7 +209,15 @@ export default function App() {
           display:'flex', flexDirection:'column',
           flexShrink:0, overflow:'hidden',
         }}>
-          {curTab === 'zone'   && <ZonePanel        {...commonProps} />}
+          {curTab === 'zone'   && <ZonePanel
+            {...commonProps}
+            drawMode={drawMode}
+            setDrawMode={setDrawMode}
+            pendingLatlngs={pendingLatlngs}
+            setPendingLatlngs={setPendingLatlngs}
+            hiddenZones={hiddenZones}
+            setHiddenZones={setHiddenZones}
+          />}
           {curTab === 'drvreg' && <DriverRegPanel    {...commonProps} />}
           {curTab === 'assign' && <AssignPanel
             {...commonProps}
@@ -211,6 +240,10 @@ export default function App() {
           setZones={setZones}
           selectedDriverId={selectedDriverId}
           setSelectedDriverId={setSelectedDriverId}
+          drawMode={drawMode}
+          onDrawComplete={handleDrawComplete}
+          pendingLatlngs={pendingLatlngs}
+          hiddenZones={hiddenZones}
         />
       </div>
 

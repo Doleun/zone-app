@@ -1,17 +1,21 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 /* ══════════════════════════════════════
    ZonePanel
    - 지역/캠프/교대 필터
    - 구역 목록 (지역>캠프 그룹, 가나다순)
-   - 구역 추가/편집/삭제
+   - 구역 추가(지도 그리기) / 편집 / 삭제
    - 레이어 전체보기/해제, 개별 가시성
-   - 구역 그리기 (MapView와 연동)
 ══════════════════════════════════════ */
 export default function ZonePanel({
   zones, setZones, drivers,
   regions, camps,
   onSave, showToast, nextColor,
+  // 그리기
+  drawMode, setDrawMode,
+  pendingLatlngs, setPendingLatlngs,
+  // 가시성
+  hiddenZones, setHiddenZones,
 }) {
   /* ── 필터 ── */
   const [filterRegion, setFilterRegion] = useState('');
@@ -19,13 +23,21 @@ export default function ZonePanel({
   const [filterShift,  setFilterShift]  = useState('');
 
   /* ── UI 상태 ── */
-  const [hiddenZones,     setHiddenZones]     = useState(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState({});
-  const [editZone,        setEditZone]        = useState(null);  // null | zone object
+  const [editZone,        setEditZone]        = useState(null);
   const [showModal,       setShowModal]       = useState(false);
 
   /* ── 모달 폼 ── */
   const [form, setForm] = useState({ region:'', camp:'', name:'', qtyDay:0, qtyNight:0 });
+
+  /* ── pendingLatlngs 완료 시 자동으로 모달 열기 ── */
+  useEffect(() => {
+    if (pendingLatlngs) {
+      setForm({ region:'', camp:'', name:'', qtyDay:0, qtyNight:0 });
+      setEditZone(null);
+      setShowModal(true);
+    }
+  }, [pendingLatlngs]);
 
   /* ── 필터링된 구역 ── */
   const filteredZones = useMemo(() => zones.filter(z => {
@@ -95,50 +107,88 @@ export default function ZonePanel({
     setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  /* ── 모달 열기 ── */
-  const openModal = (zone=null) => {
-    if (zone) {
-      setForm({
-        region:   zone.region   || '',
-        camp:     zone.camp     || '',
-        name:     zone.name,
-        qtyDay:   zone.qtyDay   != null ? zone.qtyDay   : (zone.qty ?? 0),
-        qtyNight: zone.qtyNight != null ? zone.qtyNight : 0,
-      });
-      setEditZone(zone);
+  /* ── 그리기 시작 ── */
+  const startDraw = () => {
+    if (drawMode) {
+      // 그리기 취소
+      setDrawMode(false);
+      setPendingLatlngs(null);
+      showToast('그리기 취소됨');
     } else {
-      setForm({ region:'', camp:'', name:'', qtyDay:0, qtyNight:0 });
-      setEditZone(null);
+      setPendingLatlngs(null);
+      setDrawMode(true);
+      showToast('🖊️ 지도에서 클릭하여 점을 추가하세요. 더블클릭으로 완료.');
     }
+  };
+
+  /* ── 편집 모달 열기 ── */
+  const openEdit = (zone) => {
+    setForm({
+      region:   zone.region   || '',
+      camp:     zone.camp     || '',
+      name:     zone.name,
+      qtyDay:   zone.qtyDay   != null ? zone.qtyDay   : (zone.qty ?? 0),
+      qtyNight: zone.qtyNight != null ? zone.qtyNight : 0,
+    });
+    setEditZone(zone);
     setShowModal(true);
+  };
+
+  /* ── 모달 닫기 ── */
+  const closeModal = () => {
+    setShowModal(false);
+    setEditZone(null);
+    // 신규 구역 그리기 취소 시 pendingLatlngs 초기화
+    if (!editZone) {
+      setPendingLatlngs(null);
+    }
   };
 
   /* ── 저장 ── */
   const saveZone = async () => {
     if (!form.name.trim()) { showToast('구역명을 입력하세요'); return; }
     let newZones;
+
     if (editZone) {
+      /* 편집 */
       newZones = zones.map(z => z.id === editZone.id
-        ? { ...z, region:form.region, camp:form.camp, name:form.name.trim(),
-            qtyDay:parseInt(form.qtyDay)||0, qtyNight:parseInt(form.qtyNight)||0 }
-        : z);
+        ? { ...z,
+            region:   form.region,
+            camp:     form.camp,
+            name:     form.name.trim(),
+            qtyDay:   parseInt(form.qtyDay)   || 0,
+            qtyNight: parseInt(form.qtyNight) || 0,
+          }
+        : z
+      );
     } else {
-      // 새 구역은 MapView의 pendingLL이 있어야 하지만
-      // 여기서는 모달만 처리 (그리기는 MapView에서 완료 후 이 함수 호출)
-      showToast('구역을 먼저 지도에서 그려주세요');
-      return;
+      /* 신규 */
+      if (!pendingLatlngs) { showToast('구역을 먼저 지도에서 그려주세요'); return; }
+      const newZone = {
+        id:       crypto.randomUUID(),
+        region:   form.region,
+        camp:     form.camp,
+        name:     form.name.trim(),
+        qtyDay:   parseInt(form.qtyDay)   || 0,
+        qtyNight: parseInt(form.qtyNight) || 0,
+        color:    nextColor(),
+        latlngs:  pendingLatlngs,
+      };
+      newZones = [...zones, newZone];
+      setPendingLatlngs(null);
     }
+
     setZones(newZones);
     await onSave(newZones, null);
     setShowModal(false);
+    setEditZone(null);
     showToast('✅ 저장 완료');
   };
 
   /* ── 삭제 ── */
   const deleteZone = async (zid) => {
     if (!window.confirm('이 구역을 삭제할까요?')) return;
-    const newZones   = zones.filter(z => z.id !== zid);
-    const newDrivers = null; // drivers는 App에서 관리
+    const newZones = zones.filter(z => z.id !== zid);
     setZones(newZones);
     await onSave(newZones, null);
     showToast('✅ 삭제 완료');
@@ -178,12 +228,26 @@ export default function ZonePanel({
           <button className="lbtn" onClick={()=>setAllVisibility(true)}>👁 전체보기</button>
           <button className="lbtn" onClick={()=>setAllVisibility(false)}>🚫 전체해제</button>
         </div>
+
+        {/* 구역 그리기 버튼 */}
+        <button
+          className={`btn ${drawMode ? 'btn-danger' : 'btn-primary'}`}
+          style={{ fontSize:12, padding:'7px 0' }}
+          onClick={startDraw}
+        >
+          {drawMode ? '✖ 그리기 취소' : '🖊️ 새 구역 그리기'}
+        </button>
       </div>
 
       {/* 목록 */}
       <div className="sb-list">
         {groupedZones.sortedKeys.length === 0
-          ? <div className="empty"><div className="empty-icon">🗺️</div><div className="empty-text">구역이 없습니다.<br/>지도에서 구역을 그려주세요.</div></div>
+          ? (
+            <div className="empty">
+              <div className="empty-icon">🗺️</div>
+              <div className="empty-text">구역이 없습니다.<br/>아래 버튼으로 그려주세요.</div>
+            </div>
+          )
           : groupedZones.sortedKeys.map(key => {
             const gZones  = groupedZones.grouped[key];
             const isOpen  = collapsedGroups[key] !== true;
@@ -215,7 +279,7 @@ export default function ZonePanel({
                             <button className="icon-btn" onClick={()=>toggleVisibility(z.id)}>
                               {hidden?'🚫':'👁'}
                             </button>
-                            <button className="icon-btn" onClick={()=>openModal(z)}>✏️</button>
+                            <button className="icon-btn" onClick={()=>openEdit(z)}>✏️</button>
                             <button className="icon-btn red" onClick={()=>deleteZone(z.id)}>🗑️</button>
                           </div>
                         </div>
@@ -229,11 +293,17 @@ export default function ZonePanel({
         }
       </div>
 
-      {/* 구역 편집 모달 */}
+      {/* 구역 모달 (편집 / 신규) */}
       {showModal && (
-        <div className="overlay" onClick={()=>setShowModal(false)}>
+        <div className="overlay" onClick={closeModal}>
           <div className="modal" onClick={e=>e.stopPropagation()}>
-            <div className="modal-title">{editZone ? '구역 편집' : '구역 추가'}</div>
+            <div className="modal-title">{editZone ? '구역 편집' : '새 구역 정보 입력'}</div>
+
+            {!editZone && (
+              <div style={{ background:'var(--surface2)', borderRadius:6, padding:'8px 10px', fontSize:11, color:'var(--text2)', marginBottom:10, lineHeight:1.6 }}>
+                ✅ 폴리곤 그리기 완료. 구역 정보를 입력하고 저장하세요.
+              </div>
+            )}
 
             <div className="field">
               <label className="field-label">지역</label>
@@ -274,7 +344,7 @@ export default function ZonePanel({
             </div>
 
             <div className="modal-btns">
-              <button className="btn btn-secondary" onClick={()=>setShowModal(false)}>취소</button>
+              <button className="btn btn-secondary" onClick={closeModal}>취소</button>
               <button className="btn btn-primary" onClick={saveZone}>저장</button>
             </div>
           </div>

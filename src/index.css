@@ -15,6 +15,7 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 .btn{width:100%;padding:8px 12px;border-radius:7px;border:none;font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:5px;}
 .btn-primary{background:var(--accent);color:#fff;}.btn-primary:hover{background:#ea6c08;}
 .btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border);}.btn-secondary:hover{background:#2a2d38;}
+.btn-danger{background:var(--red);color:#fff;}.btn-danger:hover{background:#dc2626;}
 
 /* ── 필터 셀렉트 ── */
 .filter-select{flex:1;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:11px;outline:none;cursor:pointer;}
