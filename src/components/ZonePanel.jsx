@@ -16,6 +16,8 @@ export default function ZonePanel({
   pendingLatlngs, setPendingLatlngs,
   // 가시성
   hiddenZones, setHiddenZones,
+  // 지도 포커스
+  setFocusZoneId,
 }) {
   /* ── 필터 ── */
   const [filterRegion, setFilterRegion] = useState('');
@@ -269,7 +271,10 @@ export default function ZonePanel({
                       const day    = parseInt(z.qtyDay   != null ? z.qtyDay   : (z.qty??0))||0;
                       const night  = parseInt(z.qtyNight != null ? z.qtyNight : 0)||0;
                       return (
-                        <div key={z.id} className={`item${hidden?' zone-hidden':''}`}>
+                        <div key={z.id} className={`item${hidden?' zone-hidden':''}`}
+                          onClick={() => setFocusZoneId({ id: z.id, ts: Date.now() })}
+                          style={{ cursor:'pointer' }}
+                        >
                           <div className="color-dot" style={{ background:z.color }} />
                           <div className="item-body">
                             <div className="item-name">{z.name}</div>
@@ -295,7 +300,7 @@ export default function ZonePanel({
 
       {/* 구역 모달 (편집 / 신규) */}
       {showModal && (
-        <div className="overlay" onClick={closeModal}>
+        <div className="overlay">
           <div className="modal" onClick={e=>e.stopPropagation()}>
             <div className="modal-title">{editZone ? '구역 편집' : '새 구역 정보 입력'}</div>
 

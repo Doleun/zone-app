@@ -18,7 +18,6 @@ export default function MapView({
   hiddenZones,
   focusZoneId,
   setFocusZoneId,
-  onAssignZoneToggle,
 }) {
   const mapRef                = useRef(null);
   const mapInstance           = useRef(null);
@@ -27,19 +26,17 @@ export default function MapView({
   const driverLabelMarkersRef = useRef([]);
   const unassignedLayerRef    = useRef(null);
   const backupPreviewLayerRef = useRef(null);
-  const assignOverlayRef      = useRef(null); // 배송구역 탭 클릭 오버레이
 
   const drawClicksRef  = useRef([]);
   const drawDotsRef    = useRef([]);
   const drawLineRef    = useRef(null);
   const drawPreviewRef = useRef(null);
-  const drawModeRef    = useRef(false);
-  const onAssignZoneToggleRef = useRef(onAssignZoneToggle); // 항상 최신 콜백 참조
+  const drawModeRef    = useRef(false); // 클릭 핸들러에서 최신 drawMode 참조용
 
   const [drawCount, setDrawCount] = useState(0);
 
+  // drawMode 변경 시 ref 동기화
   useEffect(() => { drawModeRef.current = drawMode; }, [drawMode]);
-  useEffect(() => { onAssignZoneToggleRef.current = onAssignZoneToggle; }, [onAssignZoneToggle]);
 
   /* ── 지도 초기화 ── */
   useEffect(() => {
@@ -51,7 +48,6 @@ export default function MapView({
     driverLayerRef.current        = L.layerGroup().addTo(map);
     unassignedLayerRef.current    = L.layerGroup().addTo(map);
     backupPreviewLayerRef.current = L.layerGroup().addTo(map);
-    assignOverlayRef.current      = L.layerGroup().addTo(map);
     mapInstance.current = map;
   }, []);
 
@@ -415,7 +411,6 @@ export default function MapView({
     driverLabelMarkersRef.current = [];
     unassignedLayerRef.current?.clearLayers();
     backupPreviewLayerRef.current?.clearLayers();
-    assignOverlayRef.current?.clearLayers();
 
     if (curTab === 'assign') {
       Object.values(zoneLayersRef.current).forEach(({ poly, label }) => {
@@ -423,7 +418,6 @@ export default function MapView({
       });
       renderDriversOnMap();
       renderUnassignedZones();
-      renderAssignOverlay();
     } else {
       Object.values(zoneLayersRef.current).forEach(({ poly, label }) => {
         try { map.addLayer(poly); map.addLayer(label); } catch{}
@@ -450,49 +444,11 @@ export default function MapView({
         L.polygon(lls, { color:'#6b7280', fillColor:'#6b7280', fillOpacity:.15, weight:1.5, dashArray:'4,4' })
       );
       const labelPos = z.labelPos ? L.latLng(z.labelPos.lat, z.labelPos.lng) : centroid(z.latlngs);
-      const label = L.marker(labelPos, { icon: makeUnassignedIcon(z), zIndexOffset:500 });
-      label.on('click', (e) => {
-        L.DomEvent.stop(e);
-        onAssignZoneToggleRef.current?.(z.id);
-      });
-      unassignedLayerRef.current.addLayer(label);
+      unassignedLayerRef.current.addLayer(
+        L.marker(labelPos, { icon: makeUnassignedIcon(z), zIndexOffset:500 })
+      );
     });
   }, [zones, drivers]);
-
-  /* ══════════════════════════════════════
-     배송구역 탭: 구역 클릭 오버레이
-     (기사 선택 시 모든 구역 투명 클릭 가능)
-  ══════════════════════════════════════ */
-  const renderAssignOverlay = useCallback(() => {
-    assignOverlayRef.current?.clearLayers();
-    if (!selectedDriverId || curTab !== 'assign') return;
-
-    const driver = drivers.find(d => d.id === selectedDriverId);
-    if (!driver) return;
-
-    const assignedIds = new Set(driver.zones || []);
-
-    zones.forEach(z => {
-      const isAssigned = assignedIds.has(z.id);
-      const lls = z.latlngs.map(p => L.latLng(p.lat, p.lng));
-
-      // 배정된 구역: 오렌지 테두리, 미배정: 완전 투명 (클릭만 가능)
-      const poly = L.polygon(lls, {
-        color:       isAssigned ? '#f97316' : '#ffffff',
-        fillColor:   isAssigned ? '#f97316' : '#ffffff',
-        fillOpacity: isAssigned ? 0.12 : 0.01,
-        weight:      isAssigned ? 2.5 : 0,
-        opacity:     isAssigned ? 1 : 0,
-      });
-
-      poly.on('click', (e) => {
-        L.DomEvent.stop(e);
-        onAssignZoneToggleRef.current?.(z.id);
-      });
-
-      assignOverlayRef.current.addLayer(poly);
-    });
-  }, [selectedDriverId, drivers, zones, curTab]);
 
   /* ══════════════════════════════════════
      기사 뷰 렌더
@@ -561,9 +517,8 @@ export default function MapView({
     if (curTab === 'assign') {
       renderDriversOnMap();
       renderUnassignedZones();
-      renderAssignOverlay();
     }
-  }, [drivers, selectedDriverId, curTab, renderUnassignedZones, renderAssignOverlay]);
+  }, [drivers, selectedDriverId, curTab, renderUnassignedZones]);
 
   useEffect(() => {
     setTimeout(() => mapInstance.current?.invalidateSize(), 100);

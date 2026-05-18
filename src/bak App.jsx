@@ -116,21 +116,6 @@ export default function App() {
     setDrawMode(false);
   }, []);
 
-  /* ── 배송구역 탭: 지도에서 구역 토글 ── */
-  const handleAssignZoneToggle = useCallback(async (zoneId) => {
-    if (!selectedDriverId) return;
-    const newDrivers = drivers.map(d => {
-      if (d.id !== selectedDriverId) return d;
-      const has = (d.zones || []).includes(zoneId);
-      return { ...d, zones: has
-        ? (d.zones || []).filter(id => id !== zoneId)
-        : [...(d.zones || []), zoneId]
-      };
-    });
-    setDrivers(newDrivers);
-    await handleSave(null, newDrivers);
-  }, [selectedDriverId, drivers, handleSave]);
-
   /* ── 탭 전환 시 그리기 모드 해제 ── */
   useEffect(() => {
     if (drawMode) {
@@ -265,7 +250,6 @@ export default function App() {
           hiddenZones={hiddenZones}
           focusZoneId={focusZoneId}
           setFocusZoneId={setFocusZoneId}
-          onAssignZoneToggle={handleAssignZoneToggle}
         />
       </div>
 
