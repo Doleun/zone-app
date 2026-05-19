@@ -6,12 +6,16 @@ import {
   subscribeRegions, subscribeCamps,
   subscribeUsers, getUserDoc,
 } from './firebase/db';
+import { useSimulation } from './hooks/useSimulation';
 import Header from './components/Header';
 import ZonePanel from './components/ZonePanel';
 import DriverRegPanel from './components/DriverRegPanel';
 import AssignPanel from './components/AssignPanel';
 import RegionCampPanel from './components/RegionCampPanel';
 import MapView from './components/MapView';
+import SimPanel from './components/simulation/SimPanel';
+import SimAssignPanel from './components/simulation/SimAssignPanel';
+import SimMapView from './components/simulation/SimMapView';
 import Toast from './components/Toast';
 import './index.css';
 
@@ -48,6 +52,10 @@ export default function App() {
   const [hiddenZones,   setHiddenZones]   = useState(new Set());
   const [focusZoneId,   setFocusZoneId]   = useState(null);
   const [focusDriverId, setFocusDriverId] = useState(null);
+
+  /* ── 시뮬레이션 ── */
+  const [simSplitView,         setSimSplitView]         = useState(true);
+  const [selectedSimDriverId,  setSelectedSimDriverId]  = useState(null);
 
   /* ── 인증 ── */
   useEffect(() => {
@@ -92,6 +100,12 @@ export default function App() {
     setToast(msg);
     setTimeout(() => setToast(null), 2400);
   }, []);
+
+  /* ── 시뮬레이션 훅 (showToast 이후) ── */
+  const {
+    simulations, activeSimId, setActiveSimId, activeSim,
+    createSim, deleteSim, saveSimDrivers, applySim,
+  } = useSimulation({ realDrivers: drivers, showToast });
 
   /* ── 다음 색상 ── */
   const nextColor = useCallback(() => {
@@ -229,45 +243,138 @@ export default function App() {
         onSave={handleSave} showToast={showToast} logout={logout}
       />
 
-      <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
-        <div style={{
-          width:290, background:'var(--sidebar)',
-          borderRight:'1px solid var(--border)',
-          display:'flex', flexDirection:'column',
-          flexShrink:0, overflow:'hidden',
-        }}>
-          {curTab === 'zone'   && <ZonePanel
-            {...commonProps}
-            drawMode={drawMode} setDrawMode={setDrawMode}
-            pendingLatlngs={pendingLatlngs} setPendingLatlngs={setPendingLatlngs}
-            hiddenZones={hiddenZones} setHiddenZones={setHiddenZones}
-            setFocusZoneId={setFocusZoneId}
-          />}
-          {curTab === 'drvreg' && <DriverRegPanel {...commonProps} />}
-          {curTab === 'assign' && <AssignPanel
-            {...commonProps}
+      {/* ── 시뮬레이션 탭 ── */}
+      {curTab === 'sim' ? (
+        <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
+          {/* 왼쪽: 시뮬 목록 */}
+          <div style={{
+            width:240, background:'var(--sidebar)',
+            borderRight:'1px solid var(--border)',
+            display:'flex', flexDirection:'column',
+            flexShrink:0, overflow:'hidden',
+          }}>
+            <SimPanel
+              simulations={simulations}
+              activeSimId={activeSimId} setActiveSimId={setActiveSimId}
+              activeSim={activeSim}
+              regions={regions} camps={camps}
+              currentUser={currentUser}
+              onCreateSim={createSim}
+              onDeleteSim={deleteSim}
+              onApplySim={applySim}
+              showToast={showToast}
+            />
+          </div>
+
+          {/* 가운데: 배정 패널 (시뮬 선택 시) */}
+          {activeSim && (
+            <div style={{
+              width:290, background:'var(--sidebar)',
+              borderRight:'1px solid var(--border)',
+              display:'flex', flexDirection:'column',
+              flexShrink:0, overflow:'hidden',
+            }}>
+              {/* 분할/단독 토글 */}
+              <div style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', display:'flex', gap:6, flexShrink:0 }}>
+                <button
+                  className={`sort-btn ${simSplitView ? 'active' : ''}`}
+                  onClick={() => setSimSplitView(true)}
+                  style={{ flex:1 }}
+                >⬛⬛ 같이보기</button>
+                <button
+                  className={`sort-btn ${!simSplitView ? 'active' : ''}`}
+                  onClick={() => setSimSplitView(false)}
+                  style={{ flex:1 }}
+                >⬜ 시뮬만</button>
+              </div>
+              <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+                <SimAssignPanel
+                  sim={activeSim}
+                  zones={zones}
+                  regions={regions} camps={camps}
+                  realDrivers={drivers}
+                  onSaveDrivers={saveSimDrivers}
+                  showToast={showToast}
+                  selectedDriverId={selectedSimDriverId}
+                  setSelectedDriverId={setSelectedSimDriverId}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 오른쪽: 분할 지도 */}
+          {activeSim ? (
+            <SimMapView
+              sim={activeSim}
+              zones={zones}
+              realDrivers={drivers}
+              simDrivers={activeSim.drivers || []}
+              selectedRealDriverId={selectedDriverId}
+              selectedSimDriverId={selectedSimDriverId}
+              setSelectedSimDriverId={setSelectedSimDriverId}
+              splitView={simSplitView}
+              onSimZoneToggle={async (zoneId) => {
+                if (!selectedSimDriverId) return;
+                const cur = (activeSim.drivers||[]).find(d => d.id === selectedSimDriverId);
+                const isAssigned = (cur?.zones||[]).includes(zoneId);
+                const newDrivers = (activeSim.drivers||[]).map(d => {
+                  if (d.id !== selectedSimDriverId) return d;
+                  const newZones = isAssigned
+                    ? (d.zones||[]).filter(id => id !== zoneId)
+                    : [...(d.zones||[]), zoneId];
+                  return { ...d, zones: newZones };
+                });
+                await saveSimDrivers(activeSim.id, newDrivers);
+              }}
+            />
+          ) : (
+            <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text2)', fontSize:13 }}>
+              ← 시뮬레이션을 선택하세요
+            </div>
+          )}
+        </div>
+      ) : (
+        /* ── 일반 탭 ── */
+        <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
+          <div style={{
+            width:290, background:'var(--sidebar)',
+            borderRight:'1px solid var(--border)',
+            display:'flex', flexDirection:'column',
+            flexShrink:0, overflow:'hidden',
+          }}>
+            {curTab === 'zone'   && <ZonePanel
+              {...commonProps}
+              drawMode={drawMode} setDrawMode={setDrawMode}
+              pendingLatlngs={pendingLatlngs} setPendingLatlngs={setPendingLatlngs}
+              hiddenZones={hiddenZones} setHiddenZones={setHiddenZones}
+              setFocusZoneId={setFocusZoneId}
+            />}
+            {curTab === 'drvreg' && <DriverRegPanel {...commonProps} />}
+            {curTab === 'assign' && <AssignPanel
+              {...commonProps}
+              selectedDriverId={selectedDriverId}
+              setSelectedDriverId={selectDriver}
+            />}
+            {curTab === 'rc'     && <RegionCampPanel {...commonProps} />}
+          </div>
+
+          <MapView
+            curTab={curTab}
+            zones={zones} drivers={drivers}
+            onSave={handleSave} showToast={showToast}
+            setZones={setZones} setDrivers={setDrivers}
             selectedDriverId={selectedDriverId}
             setSelectedDriverId={selectDriver}
-          />}
-          {curTab === 'rc'     && <RegionCampPanel {...commonProps} />}
+            drawMode={drawMode} onDrawComplete={handleDrawComplete}
+            pendingLatlngs={pendingLatlngs}
+            hiddenZones={hiddenZones}
+            focusZoneId={focusZoneId} setFocusZoneId={setFocusZoneId}
+            focusDriverId={focusDriverId}
+            onAssignZoneToggle={handleAssignZoneToggle}
+            onBackupFixedToggle={handleBackupFixedToggle}
+          />
         </div>
-
-        <MapView
-          curTab={curTab}
-          zones={zones} drivers={drivers}
-          onSave={handleSave} showToast={showToast}
-          setZones={setZones} setDrivers={setDrivers}
-          selectedDriverId={selectedDriverId}
-          setSelectedDriverId={selectDriver}
-          drawMode={drawMode} onDrawComplete={handleDrawComplete}
-          pendingLatlngs={pendingLatlngs}
-          hiddenZones={hiddenZones}
-          focusZoneId={focusZoneId} setFocusZoneId={setFocusZoneId}
-          focusDriverId={focusDriverId}
-          onAssignZoneToggle={handleAssignZoneToggle}
-          onBackupFixedToggle={handleBackupFixedToggle}
-        />
-      </div>
+      )}
 
       {toast && <Toast msg={toast} />}
     </div>

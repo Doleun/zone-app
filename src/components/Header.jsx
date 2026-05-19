@@ -186,6 +186,8 @@ export default function Header({
           <button style={tabStyle('zone')}   onClick={() => setCurTab('zone')}>구역</button>
           <div style={{ width:1, height:20, background:'var(--border)', margin:'0 8px', opacity:.6 }} />
           <button style={tabStyle('assign')} onClick={() => setCurTab('assign')}>배송할당</button>
+          <div style={{ width:1, height:20, background:'var(--border)', margin:'0 8px', opacity:.6 }} />
+          <button style={tabStyle('sim')}    onClick={() => setCurTab('sim')}>🧪 시뮬</button>
         </div>
       </div>
 
