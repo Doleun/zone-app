@@ -53,6 +53,9 @@ export default function App() {
   const [focusZoneId,   setFocusZoneId]   = useState(null);
   const [focusDriverId, setFocusDriverId] = useState(null);
 
+  /* ── 배송할당 교대 탭 ── */
+  const [assignShift, setAssignShift] = useState('day');
+
   /* ── 시뮬레이션 ── */
   const [simSplitView,         setSimSplitView]         = useState(true);
   const [selectedSimDriverId,  setSelectedSimDriverId]  = useState(null);
@@ -354,6 +357,8 @@ export default function App() {
               {...commonProps}
               selectedDriverId={selectedDriverId}
               setSelectedDriverId={selectDriver}
+              assignShift={assignShift}
+              setAssignShift={setAssignShift}
             />}
             {curTab === 'rc'     && <RegionCampPanel {...commonProps} />}
           </div>
@@ -372,6 +377,7 @@ export default function App() {
             focusDriverId={focusDriverId}
             onAssignZoneToggle={handleAssignZoneToggle}
             onBackupFixedToggle={handleBackupFixedToggle}
+            assignShift={assignShift}
           />
         </div>
       )}

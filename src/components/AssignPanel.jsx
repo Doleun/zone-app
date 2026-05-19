@@ -7,10 +7,10 @@ export default function AssignPanel({
   regions, camps,
   onSave, showToast,
   selectedDriverId, setSelectedDriverId,
+  assignShift, setAssignShift,
 }) {
   const [filterRegion, setFilterRegion] = useState('');
   const [filterCamp,   setFilterCamp]   = useState('');
-  const [filterShift,  setFilterShift]  = useState('');
   const [sortMode,     setSortMode]     = useState('name');
   const [filterType,   setFilterType]   = useState('fixed');
 
@@ -40,6 +40,7 @@ export default function AssignPanel({
   const filteredDrivers = useMemo(() => {
     return drivers.filter(d => {
       if (d.type !== filterType) return false;
+      if ((d.shift || 'day') !== assignShift) return false;
       if (filterRegion && d.region !== filterRegion) return false;
       if (filterCamp) {
         const campMatch = d.type==='fixed'
@@ -47,10 +48,9 @@ export default function AssignPanel({
           : (d.camps||[]).includes(filterCamp);
         if (!campMatch) return false;
       }
-      if (filterShift && (d.shift || 'day') !== filterShift) return false;
       return true;
     });
-  }, [drivers, filterRegion, filterCamp, filterShift, filterType]);
+  }, [drivers, filterRegion, filterCamp, assignShift, filterType]);
 
   const onZoneCheck = async (did, zid, checked) => {
     const newDrivers = drivers.map(d => {
@@ -225,9 +225,6 @@ export default function AssignPanel({
           <span className="assign-driver-name">
             {d.name}
             <span className={`badge badge-${d.type}`}>{d.type==='backup'?'백업':'고정'}</span>
-            <span className={`badge badge-${d.shift==='night'?'night':'day'}`}>
-              {d.shift==='night'?'🌙 야간':'☀️ 주간'}
-            </span>
           </span>
         </div>
         <div className="assign-driver-sub">{driverSubText(d)}</div>
@@ -244,6 +241,33 @@ export default function AssignPanel({
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
+      {/* ── 주/야간 탭 ── */}
+      <div style={{ display:'flex', flexShrink:0, borderBottom:'2px solid var(--border)' }}>
+        <button
+          onClick={() => { setAssignShift('day'); setSelectedDriverId(null); }}
+          style={{
+            flex:1, padding:'10px 0', fontSize:13, fontWeight:700,
+            border:'none', cursor:'pointer', transition:'all .15s',
+            background: assignShift === 'day' ? 'var(--accent)' : 'var(--sidebar)',
+            color:       assignShift === 'day' ? '#fff'         : 'var(--text2)',
+            borderBottom: assignShift === 'day' ? '2px solid var(--accent)' : '2px solid transparent',
+            marginBottom: -2,
+          }}
+        >☀️ 주간</button>
+        <button
+          onClick={() => { setAssignShift('night'); setSelectedDriverId(null); }}
+          style={{
+            flex:1, padding:'10px 0', fontSize:13, fontWeight:700,
+            border:'none', cursor:'pointer', transition:'all .15s',
+            background: assignShift === 'night' ? '#3730a3' : 'var(--sidebar)',
+            color:       assignShift === 'night' ? '#fff'    : 'var(--text2)',
+            borderBottom: assignShift === 'night' ? '2px solid #6366f1' : '2px solid transparent',
+            marginBottom: -2,
+          }}
+        >🌙 야간</button>
+      </div>
+
+      {/* ── 필터/정렬 헤더 ── */}
       <div style={{ padding:'10px 10px 8px', borderBottom:'1px solid var(--border)', flexShrink:0, display:'flex', flexDirection:'column', gap:7 }}>
         <div style={{ fontSize:10, fontWeight:700, color:'var(--text2)', letterSpacing:'.8px', textTransform:'uppercase' }}>기사별 배송구역</div>
 
@@ -255,13 +279,6 @@ export default function AssignPanel({
           <select className="filter-select" value={filterCamp} onChange={e=>setFilterCamp(e.target.value)}>
             <option value="">전체 캠프</option>
             {filteredCamps.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-        <div className="filter-row">
-          <select className="filter-select" value={filterShift} onChange={e=>setFilterShift(e.target.value)}>
-            <option value="">전체 교대</option>
-            <option value="day">☀️ 주간</option>
-            <option value="night">🌙 야간</option>
           </select>
         </div>
 

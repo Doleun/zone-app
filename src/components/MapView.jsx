@@ -16,6 +16,7 @@ export default function MapView({
   focusDriverId,
   onAssignZoneToggle,
   onBackupFixedToggle,
+  assignShift = 'day',
 }) {
   const mapRef                = useRef(null);
   const mapInstance           = useRef(null);
@@ -37,6 +38,7 @@ export default function MapView({
   const driversRef             = useRef(drivers);
   const onAssignZoneToggleRef  = useRef(onAssignZoneToggle);
   const onBackupFixedToggleRef = useRef(onBackupFixedToggle);
+  const assignShiftRef         = useRef(assignShift);
 
   const [drawCount, setDrawCount] = useState(0);
 
@@ -45,6 +47,7 @@ export default function MapView({
   useEffect(() => { driversRef.current = drivers; }, [drivers]);
   useEffect(() => { onAssignZoneToggleRef.current = onAssignZoneToggle; }, [onAssignZoneToggle]);
   useEffect(() => { onBackupFixedToggleRef.current = onBackupFixedToggle; }, [onBackupFixedToggle]);
+  useEffect(() => { assignShiftRef.current = assignShift; }, [assignShift]);
 
   /* ── 지도 초기화 ── */
   useEffect(() => {
@@ -437,18 +440,30 @@ export default function MapView({
   }, [curTab]);
 
   /* ══════════════════════════════════════
-     미배정 구역
+     미배정 구역 (해당 교대 qty=0이면 숨김)
   ══════════════════════════════════════ */
   const renderUnassignedZones = useCallback(() => {
     const map = mapInstance.current; if (!map) return;
     unassignedLayerRef.current?.clearLayers();
 
+    const shift = assignShiftRef.current;
+
+    /* 현재 교대의 고정기사가 배정한 구역만 "배정됨"으로 처리 */
     const assignedZoneIds = new Set(
-      drivers.filter(d => d.type === 'fixed').flatMap(d => d.zones || [])
+      drivers
+        .filter(d => d.type === 'fixed' && (d.shift || 'day') === shift)
+        .flatMap(d => d.zones || [])
     );
 
     zones.forEach(z => {
       if (assignedZoneIds.has(z.id)) return;
+
+      /* 해당 교대 수량이 0이면 완전히 숨김 */
+      const qty = shift === 'night'
+        ? (parseInt(z.qtyNight) || 0)
+        : (parseInt(z.qtyDay != null ? z.qtyDay : (z.qty ?? 0)) || 0);
+      if (qty === 0) return;
+
       const lls = z.latlngs.map(p => L.latLng(p.lat, p.lng));
       unassignedLayerRef.current.addLayer(
         L.polygon(lls, { color:'#6b7280', fillColor:'#6b7280', fillOpacity:.15, weight:1.5, dashArray:'4,4' })
@@ -494,7 +509,7 @@ export default function MapView({
   }, [selectedDriverId, drivers, zones, curTab]);
 
   /* ══════════════════════════════════════
-     기사 렌더
+     기사 렌더 (현재 교대만 표시)
   ══════════════════════════════════════ */
   const renderDriversOnMap = useCallback(() => {
     const map = mapInstance.current; if (!map) return;
@@ -503,7 +518,12 @@ export default function MapView({
     driverLabelMarkersRef.current = [];
     driverPolysRef.current = {};
 
-    drivers.forEach(driver => {
+    const shift = assignShiftRef.current;
+
+    /* 현재 교대 기사만 렌더링 */
+    const shiftDrivers = drivers.filter(d => (d.shift || 'day') === shift);
+
+    shiftDrivers.forEach(driver => {
       if (driver.type === 'backup' && driver.id !== selectedDriverId) return;
       const dZones = (driver.zones||[]).map(zid => zones.find(z => z.id === zid)).filter(Boolean);
       if (!dZones.length) return;
@@ -568,6 +588,14 @@ export default function MapView({
       }
     });
   }, [drivers, zones, selectedDriverId, driverColor, getDriverTotal, handleDriverClick, onSave, setDrivers]);
+
+  /* assignShift 변경 시 지도 재렌더 */
+  useEffect(() => {
+    if (curTab !== 'assign') return;
+    renderDriversOnMap();
+    renderUnassignedZones();
+    renderAssignOverlay();
+  }, [assignShift]);
 
   useEffect(() => {
     if (curTab === 'assign') {
