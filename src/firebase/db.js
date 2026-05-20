@@ -5,6 +5,14 @@ import {
   addDoc, updateDoc, serverTimestamp,
 } from 'firebase/firestore';
 
+/* ── undefined → null 깊은 변환 (Firestore는 undefined 거부) ── */
+const deepSanitize = (obj) => {
+  if (Array.isArray(obj)) return obj.map(deepSanitize);
+  if (obj !== null && typeof obj === 'object')
+    return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, deepSanitize(v)]));
+  return obj === undefined ? null : obj;
+};
+
 /* ══════════════════════════════════════
    구역·기사 데이터
 ══════════════════════════════════════ */
@@ -93,11 +101,6 @@ export const restoreBackup = async (backup) => {
 
 /* ══════════════════════════════════════
    시뮬레이션
-   simulations/{simId} → {
-     name, scope: { regions[], camps[] },
-     createdAt, createdBy,
-     drivers[],   ← 시뮬 전용 기사 (추가/삭제 가능)
-   }
 ══════════════════════════════════════ */
 
 /** 시뮬 목록 실시간 구독 */
@@ -108,7 +111,7 @@ export const subscribeSimulations = (callback) =>
       .sort((a, b) => {
         const ta = a.createdAt?.toMillis?.() || 0;
         const tb = b.createdAt?.toMillis?.() || 0;
-        return tb - ta; // 최신순
+        return tb - ta;
       });
     callback(sims);
   });
@@ -117,17 +120,17 @@ export const subscribeSimulations = (callback) =>
 export const createSimulation = async ({ name, scope, createdBy }) => {
   const ref = await addDoc(collection(db, 'simulations'), {
     name,
-    scope,        // { regions: [], camps: [] }
-    drivers: [],  // 시뮬 전용 기사 목록
+    scope,
+    drivers: [],
     createdAt: serverTimestamp(),
     createdBy,
   });
   return ref.id;
 };
 
-/** 시뮬 업데이트 (drivers 배정 등) */
+/** 시뮬 업데이트 - undefined 포함 데이터 자동 정제 */
 export const updateSimulation = (simId, data) =>
-  updateDoc(doc(db, 'simulations', simId), data);
+  updateDoc(doc(db, 'simulations', simId), deepSanitize(data));
 
 /** 시뮬 삭제 */
 export const deleteSimulation = (simId) =>
@@ -137,21 +140,19 @@ export const deleteSimulation = (simId) =>
 export const getSimulation = (simId) =>
   getDoc(doc(db, 'simulations', simId));
 
-/** 시뮬 → 실제 데이터 적용 (drivers만 scope 범위 내 교체) */
+/** 시뮬 → 실제 데이터 적용 */
 export const applySimulation = async (sim, realDrivers) => {
   const { scope, drivers: simDrivers } = sim;
   const scopeCamps = new Set(scope?.camps || []);
 
-  // scope 범위 밖 실제 기사는 유지, 범위 안은 시뮬 기사로 교체
   const outsideDrivers = realDrivers.filter(d => {
-    const driverCamp = d.type === 'fixed' ? d.camp : null;
+    const driverCamp  = d.type === 'fixed'  ? d.camp : null;
     const driverCamps = d.type === 'backup' ? (d.camps || []) : [];
     if (d.type === 'fixed')  return !scopeCamps.has(driverCamp);
     if (d.type === 'backup') return !driverCamps.some(c => scopeCamps.has(c));
     return true;
   });
 
-  const newDrivers = [...outsideDrivers, ...simDrivers];
-  await setDoc(doc(db, 'data', 'main'), { zones: undefined }, { merge: true });
+  const newDrivers = deepSanitize([...outsideDrivers, ...simDrivers]);
   await updateDoc(doc(db, 'data', 'main'), { drivers: newDrivers });
 };
