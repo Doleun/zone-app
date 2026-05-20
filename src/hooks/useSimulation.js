@@ -7,27 +7,17 @@ import {
   applySimulation,
 } from '../firebase/db';
 
-/* ══════════════════════════════════════
-   useSimulation
-   - 시뮬 목록 구독
-   - 현재 선택된 시뮬 관리
-   - 시뮬 내 기사 CRUD
-   - 실제 데이터 적용
-══════════════════════════════════════ */
 export function useSimulation({ realDrivers, showToast }) {
-  const [simulations,    setSimulations]    = useState([]);
-  const [activeSimId,    setActiveSimId]    = useState(null);
+  const [simulations, setSimulations] = useState([]);
+  const [activeSimId, setActiveSimId] = useState(null);
 
-  /* 목록 구독 */
   useEffect(() => {
     const unsub = subscribeSimulations(setSimulations);
     return () => unsub();
   }, []);
 
-  /* 현재 활성 시뮬 객체 */
   const activeSim = simulations.find(s => s.id === activeSimId) || null;
 
-  /* ── 시뮬 생성 ── */
   const createSim = useCallback(async ({ name, scope, createdBy }) => {
     if (!name.trim()) { showToast('시뮬레이션 이름을 입력하세요'); return null; }
     try {
@@ -41,7 +31,6 @@ export function useSimulation({ realDrivers, showToast }) {
     }
   }, [showToast]);
 
-  /* ── 시뮬 삭제 ── */
   const deleteSim = useCallback(async (simId) => {
     if (!window.confirm('이 시뮬레이션을 삭제할까요?')) return;
     try {
@@ -53,7 +42,7 @@ export function useSimulation({ realDrivers, showToast }) {
     }
   }, [activeSimId, showToast]);
 
-  /* ── 시뮬 기사 저장 ── */
+  /** 시뮬 기사 배열 저장 */
   const saveSimDrivers = useCallback(async (simId, drivers) => {
     try {
       await updateSimulation(simId, { drivers });
@@ -62,12 +51,26 @@ export function useSimulation({ realDrivers, showToast }) {
     }
   }, [showToast]);
 
-  /* ── 실제 데이터 적용 ── */
+  /** 시뮬 지도에서 구역 배정/해제 토글 */
+  const toggleSimZone = useCallback(async (sim, selectedDriverId, zoneId) => {
+    if (!selectedDriverId || !sim) return;
+    const cur = (sim.drivers || []).find(d => d.id === selectedDriverId);
+    if (!cur) return;
+    const isAssigned = (cur.zones || []).includes(zoneId);
+    const newDrivers = (sim.drivers || []).map(d => {
+      if (d.id !== selectedDriverId) return d;
+      const newZones = isAssigned
+        ? (d.zones || []).filter(id => id !== zoneId)
+        : [...(d.zones || []), zoneId];
+      return { ...d, zones: newZones };
+    });
+    await saveSimDrivers(sim.id, newDrivers);
+  }, [saveSimDrivers]);
+
   const applySim = useCallback(async (sim) => {
     const confirmed = window.confirm(
       '⚠️ 실제 배정 데이터를 시뮬레이션 결과로 덮어씁니다.\n' +
-      '적용 전 반드시 백업을 완료하세요.\n\n' +
-      '계속하시겠습니까?'
+      '적용 전 반드시 백업을 완료하세요.\n\n계속하시겠습니까?'
     );
     if (!confirmed) return;
     try {
@@ -85,6 +88,7 @@ export function useSimulation({ realDrivers, showToast }) {
     createSim,
     deleteSim,
     saveSimDrivers,
+    toggleSimZone,
     applySim,
   };
 }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import * as turf from '@turf/turf';
-import { DRIVER_COLORS } from '../App';
+import { getQty, getDriverTotal, driverColor, centroid, makeZoneIcon, makeDriverIcon, makeUnassignedIcon } from '../utils/helpers';
 
 export default function MapView({
   curTab,
@@ -62,56 +62,7 @@ export default function MapView({
     mapInstance.current = map;
   }, []);
 
-  /* ── 유틸 ── */
-  const centroid = (latlngs) => {
-    const pts = latlngs.filter(p => p && 'lat' in p);
-    if (!pts.length) return L.latLng(36.5, 127.8);
-    return L.latLng(
-      pts.reduce((s,p) => s+p.lat, 0) / pts.length,
-      pts.reduce((s,p) => s+p.lng, 0) / pts.length,
-    );
-  };
-
-  const makeZoneIcon = (z) => {
-    const day   = parseInt(z.qtyDay   != null ? z.qtyDay   : (z.qty ?? 0)) || 0;
-    const night = parseInt(z.qtyNight != null ? z.qtyNight : 0)             || 0;
-    return L.divIcon({
-      className: 'zlabel',
-      html: `<div class="zlabel-inner"><div>${z.name}</div><div class="zlabel-qty">☀️${day} / 🌙${night}</div></div>`,
-      iconSize: null, iconAnchor: [0,0],
-    });
-  };
-
-  const makeDriverIcon = (driver, total) => L.divIcon({
-    className: 'zlabel',
-    html: `<div class="zlabel-inner"><div>${driver.name}</div><div class="zlabel-qty">${total}개</div></div>`,
-    iconSize: null, iconAnchor: [0,0],
-  });
-
-  const makeUnassignedIcon = (z) => L.divIcon({
-    className: 'zlabel',
-    html: `<div class="zlabel-inner" style="opacity:.55"><div>${z.name}</div><div class="zlabel-qty">미배정</div></div>`,
-    iconSize: null, iconAnchor: [0,0],
-  });
-
-  const getDriverTotal = useCallback((d) => {
-    const shift = d.shift || 'day';
-    const total = (d.zones||[]).reduce((s, zid) => {
-      const z = zones.find(z => z.id === zid); if (!z) return s;
-      const raw = shift === 'night'
-        ? (z.qtyNight != null ? z.qtyNight : 0)
-        : (z.qtyDay   != null ? z.qtyDay   : (z.qty ?? 0));
-      return s + (parseInt(raw) || 0);
-    }, 0);
-    if (d.type === 'backup' && (d.selectedFixed||[]).length > 0)
-      return Math.round(total / d.selectedFixed.length);
-    return total;
-  }, [zones]);
-
-  const driverColor = useCallback((did) => {
-    const i = drivers.findIndex(d => d.id === did);
-    return DRIVER_COLORS[i % DRIVER_COLORS.length];
-  }, [drivers]);
+  /* ── 유틸: centroid, getQty, getDriverTotal, driverColor, makeXxxIcon → utils/helpers.js ── */
 
   /* ── 드라이버 클릭 핸들러 헬퍼 ── */
   const handleDriverClick = useCallback((driver) => {
@@ -528,8 +479,8 @@ export default function MapView({
       const dZones = (driver.zones||[]).map(zid => zones.find(z => z.id === zid)).filter(Boolean);
       if (!dZones.length) return;
 
-      const color   = driverColor(driver.id);
-      const total   = getDriverTotal(driver);
+      const color   = driverColor(driver.id, drivers);
+      const total   = getDriverTotal(driver, zones);
       const opacity = selectedDriverId ? (driver.id === selectedDriverId ? .4 : .1) : .3;
       const weight  = selectedDriverId ? (driver.id === selectedDriverId ? 3  : 1)  : 2;
       driverPolysRef.current[driver.id] = { color, polys: [] };

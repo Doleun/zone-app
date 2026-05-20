@@ -1,12 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import CollapsibleSection from '../ui/CollapsibleSection';
+import { getQty, getDriverTotal } from '../../utils/helpers';
 
-/* ══════════════════════════════════════
-   SimAssignPanel
-   - 시뮬 전용 기사 CRUD + 배정
-   - scope 범위 내 구역만 표시
-   - AssignPanel과 동일한 UX
-══════════════════════════════════════ */
 export default function SimAssignPanel({
   sim,
   zones,
@@ -20,50 +15,29 @@ export default function SimAssignPanel({
   const scopeCamps  = new Set(sim?.scope?.camps  || []);
   const scopeShifts = new Set(sim?.scope?.shifts || ['day', 'night']);
 
-  /* scope 범위 내 구역만 */
   const scopeZones = useMemo(() =>
     zones.filter(z => scopeCamps.has(z.camp)),
     [zones, sim?.scope?.camps]
   );
 
-  /* ── 필터 ── */
   const [filterCamp,  setFilterCamp]  = useState('');
   const [filterShift, setFilterShift] = useState('');
   const [filterType,  setFilterType]  = useState('fixed');
   const [sortMode,    setSortMode]    = useState('name');
 
-  /* ── 기사 등록 모달 ── */
   const [showDriverModal, setShowDriverModal] = useState(false);
   const [editDriverId,    setEditDriverId]    = useState(null);
   const [driverForm, setDriverForm] = useState({ name:'', type:'fixed', shift:'day', camp:'', camps:[] });
+  const [bulkMode,   setBulkMode]   = useState(false);
+  const [bulkCount,  setBulkCount]  = useState(5);
+  const [bulkPrefix, setBulkPrefix] = useState('');
+  const [bulkStart,  setBulkStart]  = useState('A');
 
-  /* scope 캠프 목록 */
   const scopeCampList = useMemo(() =>
     camps.filter(c => scopeCamps.has(c.id)),
     [camps, sim?.scope?.camps]
   );
 
-  /* ── 수량 계산 ── */
-  const getQty = useCallback((zone, shift) => {
-    if (!zone) return 0;
-    const raw = shift === 'night'
-      ? (zone.qtyNight != null ? zone.qtyNight : 0)
-      : (zone.qtyDay   != null ? zone.qtyDay   : (zone.qty ?? 0));
-    return parseInt(raw) || 0;
-  }, []);
-
-  const getDriverTotal = useCallback((d) => {
-    const shift = d.shift || 'day';
-    const total = (d.zones||[]).reduce((s, zid) => {
-      const z = scopeZones.find(z => z.id === zid);
-      return s + getQty(z, shift);
-    }, 0);
-    if (d.type === 'backup' && (d.selectedFixed||[]).length > 0)
-      return Math.round(total / d.selectedFixed.length);
-    return total;
-  }, [scopeZones, getQty]);
-
-  /* ── 필터링 ── */
   const filteredDrivers = useMemo(() => {
     return simDrivers.filter(d => {
       if (d.type !== filterType) return false;
@@ -78,42 +52,101 @@ export default function SimAssignPanel({
     });
   }, [simDrivers, filterType, filterCamp, filterShift]);
 
-  /* ── 기사 저장 헬퍼 ── */
   const saveDrivers = useCallback(async (newDrivers) => {
     await onSaveDrivers(sim.id, newDrivers);
   }, [sim?.id, onSaveDrivers]);
 
-  /* ── 기사 추가/편집 ── */
+  /* ── 기사 추가/편집 모달 열기 ── */
   const openDriverModal = (driver = null) => {
     if (driver) {
-      setDriverForm({ name:driver.name, type:driver.type||'fixed', shift:driver.shift||'day', camp:driver.camp||'', camps:driver.camps||[] });
+      /* 편집: 기존 값 그대로 */
+      setDriverForm({
+        name:  driver.name,
+        type:  driver.type  || 'fixed',
+        shift: driver.shift || 'day',
+        camp:  driver.camp  || '',
+        camps: driver.camps || [],
+      });
       setEditDriverId(driver.id);
     } else {
-      setDriverForm({ name:'', type:'fixed', shift:'day', camp:'', camps:[] });
+      /* 신규: scope 기반 기본값 */
+      const defaultShift = scopeShifts.size === 1 ? [...scopeShifts][0] : 'day';
+      const defaultCamp  = scopeCampList.length === 1 ? scopeCampList[0].id : '';
+      const defaultCamps = scopeCampList.map(c => c.id);
+      setDriverForm({ name:'', type:'fixed', shift:defaultShift, camp:defaultCamp, camps:defaultCamps });
       setEditDriverId(null);
+      setBulkMode(false);
+      setBulkCount(5);
+      setBulkPrefix('');
+      setBulkStart('A');
     }
     setShowDriverModal(true);
   };
 
+  /* 알파벳 시퀀스 생성 (A=0 기준) */
+  const genNames = () => {
+    const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const startIdx = ALPHA.indexOf(bulkStart.toUpperCase());
+    const names = [];
+    for (let i = 0; i < bulkCount; i++) {
+      const idx = (startIdx + i) % 26;
+      const cycle = Math.floor((startIdx + i) / 26);
+      const suffix = cycle > 0 ? ALPHA[idx] + cycle : ALPHA[idx];
+      names.push((bulkPrefix.trim() ? bulkPrefix.trim() : '') + suffix);
+    }
+    return names;
+  };
+
   const saveDriver = async () => {
-    if (!driverForm.name.trim()) { showToast('기사 이름을 입력하세요'); return; }
-    let newDrivers;
+    /* 편집 모드 */
     if (editDriverId) {
-      newDrivers = simDrivers.map(d => d.id === editDriverId
+      if (!driverForm.name.trim()) { showToast('기사 이름을 입력하세요'); return; }
+      const newDrivers = simDrivers.map(d => d.id === editDriverId
         ? { ...d, name:driverForm.name.trim(), type:driverForm.type, shift:driverForm.shift, camp:driverForm.camp, camps:driverForm.camps }
         : d
       );
-    } else {
-      newDrivers = [...simDrivers, {
-        id:    'sim_d_' + Date.now(),
-        name:  driverForm.name.trim(),
+      await saveDrivers(newDrivers);
+      setShowDriverModal(false);
+      showToast('✅ 저장 완료');
+      return;
+    }
+
+    /* 일괄 생성 */
+    if (bulkMode) {
+      if (bulkCount < 1 || bulkCount > 50) { showToast('인원수는 1~50명 사이로 입력하세요'); return; }
+      if (!bulkStart.match(/^[A-Za-z]$/)) { showToast('시작 알파벳을 한 글자(A-Z)로 입력하세요'); return; }
+      const names = genNames();
+      const now = Date.now();
+      const added = names.map((name, i) => ({
+        id:    'sim_d_' + (now + i),
+        name,
         type:  driverForm.type,
         shift: driverForm.shift,
         camp:  driverForm.camp,
         camps: driverForm.camps,
         zones: [],
-      }];
+        labelPos: null,
+        selectedFixed: [],
+      }));
+      await saveDrivers([...simDrivers, ...added]);
+      setShowDriverModal(false);
+      showToast(`✅ ${added.length}명 생성 완료`);
+      return;
     }
+
+    /* 단건 생성 */
+    if (!driverForm.name.trim()) { showToast('기사 이름을 입력하세요'); return; }
+    const newDrivers = [...simDrivers, {
+      id:    'sim_d_' + Date.now(),
+      name:  driverForm.name.trim(),
+      type:  driverForm.type,
+      shift: driverForm.shift,
+      camp:  driverForm.camp,
+      camps: driverForm.camps,
+      zones: [],
+      labelPos: null,
+      selectedFixed: [],
+    }];
     await saveDrivers(newDrivers);
     setShowDriverModal(false);
     showToast('✅ 저장 완료');
@@ -135,7 +168,6 @@ export default function SimAssignPanel({
     showToast('✅ 삭제 완료');
   };
 
-  /* ── 구역 체크 ── */
   const onZoneCheck = async (did, zid, checked) => {
     const newDrivers = simDrivers.map(d => {
       if (d.id !== did) return d;
@@ -147,7 +179,6 @@ export default function SimAssignPanel({
     await saveDrivers(newDrivers);
   };
 
-  /* ── 백업기사 고정기사 선택 ── */
   const onBackupFixedChange = async (backupId, fixedId, checked) => {
     const backup = simDrivers.find(d => d.id === backupId);
     const sel = checked
@@ -162,13 +193,12 @@ export default function SimAssignPanel({
     await saveDrivers(newDrivers);
   };
 
-  /* ── 기사 선택 토글 ── */
   const toggleDriver = (did) => {
     setSelectedDriverId(selectedDriverId === did ? null : did);
   };
 
   const driverSubText = (d) => {
-    const total = getDriverTotal(d);
+    const total = getDriverTotal(d, scopeZones);
     if (d.type === 'backup') {
       const names = (d.selectedFixed||[])
         .map(fid => simDrivers.find(dr => dr.id === fid)?.name).filter(Boolean).join(', ');
@@ -180,7 +210,6 @@ export default function SimAssignPanel({
     return `${zoneNames||'구역 미배정'} · ${total}개`;
   };
 
-  /* ── 배정 UI ── */
   const buildAssignContent = (d) => {
     if (d.type === 'backup') {
       const campIds      = d.camps||[];
@@ -234,7 +263,6 @@ export default function SimAssignPanel({
       );
     }
 
-    /* 고정기사 구역 배정 */
     const assignedZoneIds = new Set(d.zones||[]);
     const assignedMap = {};
     simDrivers.forEach(od => {
@@ -319,7 +347,6 @@ export default function SimAssignPanel({
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
-      {/* 상단 필터 */}
       <div style={{ padding:'10px 10px 8px', borderBottom:'1px solid var(--border)', flexShrink:0, display:'flex', flexDirection:'column', gap:7 }}>
         <div style={{ fontSize:10, fontWeight:700, color:'var(--text2)', letterSpacing:'.8px', textTransform:'uppercase' }}>
           시뮬 배정
@@ -357,14 +384,13 @@ export default function SimAssignPanel({
         <button className="btn btn-secondary" style={{ fontSize:12, padding:'7px 0' }}
           onClick={async () => {
             if (!realDrivers?.length) { showToast('불러올 기사가 없습니다'); return; }
-            // scope 캠프 + 교대 기준으로 필터
             const toImport = realDrivers.filter(d => {
               const campMatch = d.type === 'fixed'
                 ? scopeCamps.has(d.camp)
                 : (d.camps||[]).some(c => scopeCamps.has(c));
               const shiftMatch = scopeShifts.has(d.shift || 'day');
               return campMatch && shiftMatch;
-            }).map(d => ({ ...d, id: 'sim_' + d.id, zones: [] })); // 배정은 초기화
+            }).map(d => ({ ...d, id: 'sim_' + d.id, zones: [] }));
             if (!toImport.length) { showToast('조건에 맞는 기사가 없습니다'); return; }
             const confirmed = window.confirm(`${toImport.length}명을 불러옵니다. 기존 시뮬 기사는 덮어씌워집니다.`);
             if (!confirmed) return;
@@ -375,7 +401,6 @@ export default function SimAssignPanel({
         </button>
       </div>
 
-      {/* 목록 */}
       <div className="sb-list">
         {filteredDrivers.length === 0
           ? <div className="empty"><div className="empty-icon">👤</div><div className="empty-text">기사를 추가하세요.</div></div>
@@ -395,22 +420,69 @@ export default function SimAssignPanel({
         }
       </div>
 
-      {/* 기사 등록/편집 모달 */}
       {showDriverModal && (
         <div className="overlay" onClick={() => setShowDriverModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-title">{editDriverId ? '기사 편집' : '기사 추가'}</div>
 
+            {/* 일괄 생성 토글 (신규 추가 시만) */}
+            {!editDriverId && (
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                <label style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:12, color:'var(--text2)' }}>
+                  <input type="checkbox" checked={bulkMode} onChange={e => setBulkMode(e.target.checked)}
+                    style={{ accentColor:'var(--accent)', cursor:'pointer' }} />
+                  일괄 생성 모드
+                </label>
+                {bulkMode && <span style={{ fontSize:11, color:'var(--accent)' }}>알파벳 시퀀스로 여러 명 생성</span>}
+              </div>
+            )}
+
+            {/* 일괄 생성 입력 */}
+            {!editDriverId && bulkMode ? (<>
+              <div className="field">
+                <label className="field-label">이름 앞자리 (선택)</label>
+                <input className="field-input" value={bulkPrefix} placeholder="예: 기사 → 기사A, 기사B..."
+                  onChange={e => setBulkPrefix(e.target.value)} />
+              </div>
+              <div style={{ display:'flex', gap:8 }}>
+                <div className="field" style={{ flex:1 }}>
+                  <label className="field-label">시작 알파벳</label>
+                  <input className="field-input" value={bulkStart} maxLength={1} placeholder="A"
+                    onChange={e => setBulkStart(e.target.value.toUpperCase())}
+                    style={{ textTransform:'uppercase' }} />
+                </div>
+                <div className="field" style={{ flex:1 }}>
+                  <label className="field-label">인원수</label>
+                  <input className="field-input" type="number" min={1} max={50} value={bulkCount}
+                    onChange={e => setBulkCount(parseInt(e.target.value)||1)} />
+                </div>
+              </div>
+              {bulkStart.match(/^[A-Za-z]$/) && bulkCount > 0 && (
+                <div style={{ background:'var(--surface2)', borderRadius:6, padding:'6px 10px', fontSize:11, color:'var(--text2)', marginBottom:8 }}>
+                  미리보기: {(() => {
+                    const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                    const si = ALPHA.indexOf(bulkStart.toUpperCase());
+                    const names = Array.from({ length: Math.min(bulkCount, 5) }, (_, i) => {
+                      const idx = (si + i) % 26;
+                      const cycle = Math.floor((si + i) / 26);
+                      return (bulkPrefix.trim() || '') + (cycle > 0 ? ALPHA[idx] + cycle : ALPHA[idx]);
+                    });
+                    return names.join(', ') + (bulkCount > 5 ? ` ... (총 ${bulkCount}명)` : ` (총 ${bulkCount}명)`);
+                  })()}
+                </div>
+              )}
+            </>) : (
             <div className="field">
               <label className="field-label">기사명</label>
               <input className="field-input" value={driverForm.name} placeholder="이름 입력"
                 onChange={e=>setDriverForm(f=>({...f,name:e.target.value}))}
                 onKeyDown={e=>e.key==='Enter'&&saveDriver()} />
             </div>
+            )}
             <div className="field">
               <label className="field-label">유형</label>
               <select className="field-input" value={driverForm.type}
-                onChange={e=>setDriverForm(f=>({...f,type:e.target.value,camp:'',camps:[]}))}>
+                onChange={e=>setDriverForm(f=>({...f,type:e.target.value,camp:'',camps:scopeCampList.map(c=>c.id)}))}>
                 <option value="fixed">고정</option>
                 <option value="backup">백업</option>
               </select>
@@ -419,8 +491,8 @@ export default function SimAssignPanel({
               <label className="field-label">교대</label>
               <select className="field-input" value={driverForm.shift}
                 onChange={e=>setDriverForm(f=>({...f,shift:e.target.value}))}>
-                <option value="day">☀️ 주간</option>
-                <option value="night">🌙 야간</option>
+                {scopeShifts.has('day')   && <option value="day">☀️ 주간</option>}
+                {scopeShifts.has('night') && <option value="night">🌙 야간</option>}
               </select>
             </div>
 

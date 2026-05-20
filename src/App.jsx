@@ -107,7 +107,7 @@ export default function App() {
   /* ── 시뮬레이션 훅 (showToast 이후) ── */
   const {
     simulations, activeSimId, setActiveSimId, activeSim,
-    createSim, deleteSim, saveSimDrivers, applySim,
+    createSim, deleteSim, saveSimDrivers, toggleSimZone, applySim,
   } = useSimulation({ realDrivers: drivers, showToast });
 
   /* ── 다음 색상 ── */
@@ -316,19 +316,8 @@ export default function App() {
               selectedSimDriverId={selectedSimDriverId}
               setSelectedSimDriverId={setSelectedSimDriverId}
               splitView={simSplitView}
-              onSimZoneToggle={async (zoneId) => {
-                if (!selectedSimDriverId) return;
-                const cur = (activeSim.drivers||[]).find(d => d.id === selectedSimDriverId);
-                const isAssigned = (cur?.zones||[]).includes(zoneId);
-                const newDrivers = (activeSim.drivers||[]).map(d => {
-                  if (d.id !== selectedSimDriverId) return d;
-                  const newZones = isAssigned
-                    ? (d.zones||[]).filter(id => id !== zoneId)
-                    : [...(d.zones||[]), zoneId];
-                  return { ...d, zones: newZones };
-                });
-                await saveSimDrivers(activeSim.id, newDrivers);
-              }}
+              onSimZoneToggle={(zoneId) => toggleSimZone(activeSim, selectedSimDriverId, zoneId)}
+              onSaveSimDrivers={(newDrivers) => saveSimDrivers(activeSim.id, newDrivers)}
             />
           ) : (
             <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text2)', fontSize:13 }}>

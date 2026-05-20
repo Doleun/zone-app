@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import CollapsibleSection from './ui/CollapsibleSection';
+import { getQty, getDriverTotal } from '../utils/helpers';
 
 export default function AssignPanel({
   zones, setZones,
@@ -17,25 +18,6 @@ export default function AssignPanel({
   const filteredCamps = useMemo(() =>
     filterRegion ? camps.filter(c=>c.region===filterRegion) : camps,
     [camps, filterRegion]);
-
-  const getQty = useCallback((zone, shift) => {
-    if (!zone) return 0;
-    const raw = shift === 'night'
-      ? (zone.qtyNight != null ? zone.qtyNight : 0)
-      : (zone.qtyDay   != null ? zone.qtyDay   : (zone.qty ?? 0));
-    return parseInt(raw) || 0;
-  }, []);
-
-  const getDriverTotal = useCallback((d) => {
-    const shift = d.shift || 'day';
-    const total = (d.zones||[]).reduce((s,zid) => {
-      const z = zones.find(z=>z.id===zid);
-      return s + getQty(z, shift);
-    }, 0);
-    if (d.type === 'backup' && (d.selectedFixed||[]).length > 0)
-      return Math.round(total / d.selectedFixed.length);
-    return total;
-  }, [zones, getQty]);
 
   const filteredDrivers = useMemo(() => {
     return drivers.filter(d => {
@@ -84,7 +66,7 @@ export default function AssignPanel({
   };
 
   const driverSubText = (d) => {
-    const total = getDriverTotal(d);
+    const total = getDriverTotal(d, zones);
     if (d.type === 'backup') {
       const names = (d.selectedFixed||[])
         .map(fid=>drivers.find(dr=>dr.id===fid)?.name).filter(Boolean).join(', ');
@@ -235,7 +217,7 @@ export default function AssignPanel({
 
   const sortDrivers = (arr) => arr.slice().sort((a,b) =>
     sortMode==='qty'
-      ? getDriverTotal(b)-getDriverTotal(a)
+      ? getDriverTotal(b, zones) - getDriverTotal(a, zones)
       : a.name.localeCompare(b.name,'ko')
   );
 
