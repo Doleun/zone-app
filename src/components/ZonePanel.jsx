@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 
 export default function ZonePanel({
-  zones, setZones, drivers,
+  zones, setZones, drivers, setDrivers,
   regions, camps,
   onSave, showToast, nextColor,
   drawMode, setDrawMode,
@@ -17,7 +17,6 @@ export default function ZonePanel({
   const [showModal,       setShowModal]       = useState(false);
   const [form, setForm] = useState({ region:'', camp:'', name:'', qtyDay:0, qtyNight:0 });
 
-  /* pendingLatlngs 완료 시 모달 열기 */
   useEffect(() => {
     if (pendingLatlngs) {
       setForm({ region:'', camp:'', name:'', qtyDay:0, qtyNight:0 });
@@ -112,9 +111,10 @@ export default function ZonePanel({
   };
 
   const closeModal = () => {
+    const isNew = !editZone;
     setShowModal(false);
     setEditZone(null);
-    if (!editZone) setPendingLatlngs(null);
+    if (isNew) setPendingLatlngs(null);
   };
 
   const saveZone = async () => {
@@ -152,11 +152,25 @@ export default function ZonePanel({
     showToast('✅ 저장 완료');
   };
 
+  /* ── 구역 삭제: drivers에서 해당 zoneId도 정리 ── */
   const deleteZone = async (zid) => {
     if (!window.confirm('이 구역을 삭제할까요?')) return;
     const newZones = zones.filter(z => z.id !== zid);
+
+    /* 기사 배정에서 삭제된 구역 제거 */
+    const newDrivers = drivers.map(d => {
+      if (!(d.zones || []).includes(zid)) return d;
+      const newDZones = d.zones.filter(id => id !== zid);
+      return {
+        ...d,
+        zones: newDZones,
+        labelPos: newDZones.length === 0 ? null : d.labelPos,
+      };
+    });
+
     setZones(newZones);
-    await onSave(newZones, null);
+    setDrivers(newDrivers);
+    await onSave(newZones, newDrivers);
     showToast('✅ 삭제 완료');
   };
 

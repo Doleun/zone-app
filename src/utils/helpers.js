@@ -3,7 +3,7 @@
    Leaflet 무관한 순수 유틸 + 아이콘 팩토리
 ══════════════════════════════════════ */
 import L from 'leaflet';
-import { DRIVER_COLORS } from '../App';
+import { DRIVER_COLORS } from './constants';
 
 /* ── 지도 중심점 ── */
 export const centroid = (latlngs) => {

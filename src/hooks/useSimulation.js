@@ -51,12 +51,27 @@ export function useSimulation({ realDrivers, showToast }) {
     }
   }, [showToast]);
 
-  /** 시뮬 지도에서 구역 배정/해제 토글 */
+  /** 시뮬 지도에서 구역 배정/해제 토글 (중복 배정 검증 포함) */
   const toggleSimZone = useCallback(async (sim, selectedDriverId, zoneId) => {
     if (!selectedDriverId || !sim) return;
     const cur = (sim.drivers || []).find(d => d.id === selectedDriverId);
     if (!cur) return;
     const isAssigned = (cur.zones || []).includes(zoneId);
+
+    /* 신규 배정 시 같은 교대 고정기사 중복 검증 */
+    if (!isAssigned && cur.type === 'fixed') {
+      const other = (sim.drivers || []).find(d =>
+        d.id !== selectedDriverId &&
+        d.type === 'fixed' &&
+        (d.shift || 'day') === (cur.shift || 'day') &&
+        (d.zones || []).includes(zoneId)
+      );
+      if (other) {
+        showToast(`❌ ${other.name}에게 이미 배정된 구역입니다`);
+        return;
+      }
+    }
+
     const newDrivers = (sim.drivers || []).map(d => {
       if (d.id !== selectedDriverId) return d;
       const newZones = isAssigned
@@ -65,7 +80,7 @@ export function useSimulation({ realDrivers, showToast }) {
       return { ...d, zones: newZones };
     });
     await saveSimDrivers(sim.id, newDrivers);
-  }, [saveSimDrivers]);
+  }, [saveSimDrivers, showToast]);
 
   const applySim = useCallback(async (sim) => {
     const confirmed = window.confirm(

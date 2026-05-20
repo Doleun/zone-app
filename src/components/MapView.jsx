@@ -538,7 +538,7 @@ export default function MapView({
         addLabel(pos);
       }
     });
-  }, [drivers, zones, selectedDriverId, driverColor, getDriverTotal, handleDriverClick, onSave, setDrivers]);
+  }, [drivers, zones, selectedDriverId, handleDriverClick, onSave, setDrivers]);
 
   /* assignShift 변경 시 지도 재렌더 */
   useEffect(() => {
