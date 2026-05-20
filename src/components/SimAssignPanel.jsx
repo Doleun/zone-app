@@ -27,10 +27,6 @@ export default function SimAssignPanel({
   const [showDriverModal, setShowDriverModal] = useState(false);
   const [editDriverId,    setEditDriverId]    = useState(null);
   const [driverForm, setDriverForm] = useState({ name:'', type:'fixed', shift:'day', camp:'', camps:[] });
-  const [bulkMode,   setBulkMode]   = useState(false);
-  const [bulkCount,  setBulkCount]  = useState(5);
-  const [bulkPrefix, setBulkPrefix] = useState('');
-  const [bulkStart,  setBulkStart]  = useState('A');
 
   const scopeCampList = useMemo(() =>
     camps.filter(c => scopeCamps.has(c.id)),
@@ -96,81 +92,32 @@ export default function SimAssignPanel({
       /* 신규: scope 기반 기본값 */
       const defaultShift = scopeShifts.size === 1 ? [...scopeShifts][0] : 'day';
       const defaultCamp  = scopeCampList.length === 1 ? scopeCampList[0].id : '';
-      const defaultCamps = scopeCampList.map(c => c.id);
+      const defaultCamps = scopeCampList.map(c => c.id); // 백업기사용 전체 선택
       setDriverForm({ name:'', type:'fixed', shift:defaultShift, camp:defaultCamp, camps:defaultCamps });
       setEditDriverId(null);
-      setBulkMode(false);
-      setBulkCount(5);
-      setBulkPrefix('');
-      setBulkStart('A');
     }
     setShowDriverModal(true);
   };
 
-  /* 알파벳 시퀀스 생성 (A=0 기준) */
-  const genNames = () => {
-    const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const startIdx = ALPHA.indexOf(bulkStart.toUpperCase());
-    const names = [];
-    for (let i = 0; i < bulkCount; i++) {
-      const idx = (startIdx + i) % 26;
-      const cycle = Math.floor((startIdx + i) / 26);
-      const suffix = cycle > 0 ? ALPHA[idx] + cycle : ALPHA[idx];
-      names.push((bulkPrefix.trim() ? bulkPrefix.trim() : '') + suffix);
-    }
-    return names;
-  };
-
   const saveDriver = async () => {
-    /* 편집 모드 */
+    if (!driverForm.name.trim()) { showToast('기사 이름을 입력하세요'); return; }
+    let newDrivers;
     if (editDriverId) {
-      if (!driverForm.name.trim()) { showToast('기사 이름을 입력하세요'); return; }
-      const newDrivers = simDrivers.map(d => d.id === editDriverId
+      newDrivers = simDrivers.map(d => d.id === editDriverId
         ? { ...d, name:driverForm.name.trim(), type:driverForm.type, shift:driverForm.shift, camp:driverForm.camp, camps:driverForm.camps }
         : d
       );
-      await saveDrivers(newDrivers);
-      setShowDriverModal(false);
-      showToast('✅ 저장 완료');
-      return;
-    }
-
-    /* 일괄 생성 */
-    if (bulkMode) {
-      if (bulkCount < 1 || bulkCount > 50) { showToast('인원수는 1~50명 사이로 입력하세요'); return; }
-      if (!bulkStart.match(/^[A-Za-z]$/)) { showToast('시작 알파벳을 한 글자(A-Z)로 입력하세요'); return; }
-      const names = genNames();
-      const now = Date.now();
-      const added = names.map((name, i) => ({
-        id:    'sim_d_' + (now + i),
-        name,
+    } else {
+      newDrivers = [...simDrivers, {
+        id:    'sim_d_' + Date.now(),
+        name:  driverForm.name.trim(),
         type:  driverForm.type,
         shift: driverForm.shift,
         camp:  driverForm.camp,
         camps: driverForm.camps,
         zones: [],
-        labelPos: null,
-        selectedFixed: [],
-      }));
-      await saveDrivers([...simDrivers, ...added]);
-      setShowDriverModal(false);
-      showToast(`✅ ${added.length}명 생성 완료`);
-      return;
+      }];
     }
-
-    /* 단건 생성 */
-    if (!driverForm.name.trim()) { showToast('기사 이름을 입력하세요'); return; }
-    const newDrivers = [...simDrivers, {
-      id:    'sim_d_' + Date.now(),
-      name:  driverForm.name.trim(),
-      type:  driverForm.type,
-      shift: driverForm.shift,
-      camp:  driverForm.camp,
-      camps: driverForm.camps,
-      zones: [],
-      labelPos: null,
-      selectedFixed: [],
-    }];
     await saveDrivers(newDrivers);
     setShowDriverModal(false);
     showToast('✅ 저장 완료');
@@ -449,60 +396,12 @@ export default function SimAssignPanel({
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-title">{editDriverId ? '기사 편집' : '기사 추가'}</div>
 
-            {/* 일괄 생성 토글 (신규 추가 시만) */}
-            {!editDriverId && (
-              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-                <label style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:12, color:'var(--text2)' }}>
-                  <input type="checkbox" checked={bulkMode} onChange={e => setBulkMode(e.target.checked)}
-                    style={{ accentColor:'var(--accent)', cursor:'pointer' }} />
-                  일괄 생성 모드
-                </label>
-                {bulkMode && <span style={{ fontSize:11, color:'var(--accent)' }}>알파벳 시퀀스로 여러 명 생성</span>}
-              </div>
-            )}
-
-            {/* 일괄 생성 입력 */}
-            {!editDriverId && bulkMode ? (<>
-              <div className="field">
-                <label className="field-label">이름 앞자리 (선택)</label>
-                <input className="field-input" value={bulkPrefix} placeholder="예: 기사 → 기사A, 기사B..."
-                  onChange={e => setBulkPrefix(e.target.value)} />
-              </div>
-              <div style={{ display:'flex', gap:8 }}>
-                <div className="field" style={{ flex:1 }}>
-                  <label className="field-label">시작 알파벳</label>
-                  <input className="field-input" value={bulkStart} maxLength={1} placeholder="A"
-                    onChange={e => setBulkStart(e.target.value.toUpperCase())}
-                    style={{ textTransform:'uppercase' }} />
-                </div>
-                <div className="field" style={{ flex:1 }}>
-                  <label className="field-label">인원수</label>
-                  <input className="field-input" type="number" min={1} max={50} value={bulkCount}
-                    onChange={e => setBulkCount(parseInt(e.target.value)||1)} />
-                </div>
-              </div>
-              {bulkStart.match(/^[A-Za-z]$/) && bulkCount > 0 && (
-                <div style={{ background:'var(--surface2)', borderRadius:6, padding:'6px 10px', fontSize:11, color:'var(--text2)', marginBottom:8 }}>
-                  미리보기: {(() => {
-                    const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-                    const si = ALPHA.indexOf(bulkStart.toUpperCase());
-                    const names = Array.from({ length: Math.min(bulkCount, 5) }, (_, i) => {
-                      const idx = (si + i) % 26;
-                      const cycle = Math.floor((si + i) / 26);
-                      return (bulkPrefix.trim() || '') + (cycle > 0 ? ALPHA[idx] + cycle : ALPHA[idx]);
-                    });
-                    return names.join(', ') + (bulkCount > 5 ? ` ... (총 ${bulkCount}명)` : ` (총 ${bulkCount}명)`);
-                  })()}
-                </div>
-              )}
-            </>) : (
             <div className="field">
               <label className="field-label">기사명</label>
               <input className="field-input" value={driverForm.name} placeholder="이름 입력"
                 onChange={e=>setDriverForm(f=>({...f,name:e.target.value}))}
                 onKeyDown={e=>e.key==='Enter'&&saveDriver()} />
             </div>
-            )}
             <div className="field">
               <label className="field-label">유형</label>
               <select className="field-input" value={driverForm.type}

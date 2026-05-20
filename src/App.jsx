@@ -19,6 +19,15 @@ import SimMapView from './components/simulation/SimMapView';
 import Toast from './components/Toast';
 import './index.css';
 
+/* undefined → null 깊은 변환 (Firestore 저장 전) */
+const deepSanitize = (obj) => {
+  if (Array.isArray(obj)) return obj.map(deepSanitize);
+  if (obj !== null && typeof obj === 'object')
+    return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, deepSanitize(v)]));
+  return obj === undefined ? null : obj;
+};
+const sanitizeDrivers = (drivers) => drivers.map(deepSanitize);
+
 export const ZONE_COLORS = [
   '#ef4444','#f97316','#eab308','#22c55e','#14b8a6',
   '#3b82f6','#8b5cf6','#ec4899','#06b6d4','#a3e635',
@@ -327,7 +336,10 @@ export default function App() {
                     : [...(d.zones||[]), zoneId];
                   return { ...d, zones: newZones };
                 });
-                await saveSimDrivers(activeSim.id, newDrivers);
+                await saveSimDrivers(activeSim.id, sanitizeDrivers(newDrivers));
+              }}
+              onSaveSimDrivers={async (newDrivers) => {
+                await saveSimDrivers(activeSim.id, sanitizeDrivers(newDrivers));
               }}
             />
           ) : (
