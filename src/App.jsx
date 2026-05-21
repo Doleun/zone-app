@@ -44,8 +44,28 @@ export default function App() {
   const [focusZoneId,   setFocusZoneId]   = useState(null);
   const [focusDriverId, setFocusDriverId] = useState(null);
 
+  /* ── 최신 state 참조용 ref (handleSave 클로저 stale 방지) ── */
+  const zonesRef   = useRef(zones);
+  const driversRef = useRef(drivers);
+  useEffect(() => { zonesRef.current   = zones;   }, [zones]);
+  useEffect(() => { driversRef.current = drivers; }, [drivers]);
+
   /* ── 배송할당 교대 탭 ── */
   const [assignShift, setAssignShift] = useState('day');
+
+  /* ── 구역 탭 필터 ── */
+  const [zoneShiftFilter,  setZoneShiftFilter]  = useState('');
+  const [zoneFilterRegion, setZoneFilterRegion] = useState('');
+  const [zoneFilterCamp,   setZoneFilterCamp]   = useState('');
+
+  /* ── 배송할당 탭 필터 ── */
+  const [assignFilterRegion, setAssignFilterRegion] = useState('');
+  const [assignFilterCamp,   setAssignFilterCamp]   = useState('');
+
+  /* ── 기사등록 탭 필터 ── */
+  const [drvregFilterRegion, setDrvregFilterRegion] = useState('');
+  const [drvregFilterCamp,   setDrvregFilterCamp]   = useState('');
+  const [drvregFilterShift,  setDrvregFilterShift]  = useState('');
 
   /* ── 시뮬레이션 ── */
   const [simSplitView,         setSimSplitView]         = useState(true);
@@ -67,8 +87,18 @@ export default function App() {
   useEffect(() => {
     if (authState !== 'app') return;
     const unsub1 = subscribeData(({ zones: z, drivers: d }) => {
+      /* 백업기사 zones 자동 정리 (구버전 데이터 마이그레이션) */
+      const hasLegacyBackupZones = d.some(dr => dr.type === 'backup' && (dr.zones || []).length > 0);
+      if (hasLegacyBackupZones) {
+        const cleaned = d.map(dr =>
+          dr.type === 'backup' ? { ...dr, zones: [] } : dr
+        );
+        saveData(z, cleaned).then(() => {});
+        setDrivers(cleaned);
+      } else {
+        setDrivers(d);
+      }
       setZones(z);
-      setDrivers(d);
       setColorIndex(z.length);
       setSaveState('saved');
     });
@@ -82,12 +112,13 @@ export default function App() {
   const handleSave = useCallback(async (newZones, newDrivers) => {
     setSaveState('saving');
     try {
-      await saveData(newZones ?? zones, newDrivers ?? drivers);
+      /* ref로 항상 최신 state 참조 (빠른 연속 저장 시 stale 클로저 방지) */
+      await saveData(newZones ?? zonesRef.current, newDrivers ?? driversRef.current);
     } catch(e) {
       showToast('❌ 저장 실패: ' + e.message);
       setSaveState('');
     }
-  }, [zones, drivers]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // zonesRef/driversRef는 ref, showToast는 안정적이므로 deps 불필요
 
   /* ── 토스트 ── */
   const toastTimerRef = useRef(null);
@@ -156,11 +187,9 @@ export default function App() {
     const newSel = sel.includes(fixedDriverId)
       ? sel.filter(id => id !== fixedDriverId)
       : [...sel, fixedDriverId];
-    const allZoneIds = newSel.length > 0
-      ? [...new Set(drivers.filter(d => newSel.includes(d.id)).flatMap(d => d.zones || []))]
-      : [];
+    /* zones는 저장하지 않음 — 렌더 시점에 고정기사 zones를 실시간 합산 */
     const newDrivers = drivers.map(d =>
-      d.id === selectedDriverId ? { ...d, selectedFixed: newSel, zones: allZoneIds } : d
+      d.id === selectedDriverId ? { ...d, selectedFixed: newSel } : d
     );
     setDrivers(newDrivers);
     await handleSave(null, newDrivers);
@@ -333,14 +362,24 @@ export default function App() {
               pendingLatlngs={pendingLatlngs} setPendingLatlngs={setPendingLatlngs}
               hiddenZones={hiddenZones} setHiddenZones={setHiddenZones}
               setFocusZoneId={setFocusZoneId}
+              filterShift={zoneShiftFilter}   setFilterShift={setZoneShiftFilter}
+              filterRegion={zoneFilterRegion} setFilterRegion={setZoneFilterRegion}
+              filterCamp={zoneFilterCamp}     setFilterCamp={setZoneFilterCamp}
             />}
-            {curTab === 'drvreg' && <DriverRegPanel {...commonProps} />}
+            {curTab === 'drvreg' && <DriverRegPanel
+              {...commonProps}
+              filterRegion={drvregFilterRegion} setFilterRegion={setDrvregFilterRegion}
+              filterCamp={drvregFilterCamp}     setFilterCamp={setDrvregFilterCamp}
+              filterShift={drvregFilterShift}   setFilterShift={setDrvregFilterShift}
+            />}
             {curTab === 'assign' && <AssignPanel
               {...commonProps}
               selectedDriverId={selectedDriverId}
               setSelectedDriverId={selectDriver}
               assignShift={assignShift}
               setAssignShift={setAssignShift}
+              filterRegion={assignFilterRegion} setFilterRegion={setAssignFilterRegion}
+              filterCamp={assignFilterCamp}     setFilterCamp={setAssignFilterCamp}
             />}
             {curTab === 'rc'     && <RegionCampPanel {...commonProps} />}
           </div>
@@ -360,6 +399,14 @@ export default function App() {
             onAssignZoneToggle={handleAssignZoneToggle}
             onBackupFixedToggle={handleBackupFixedToggle}
             assignShift={assignShift}
+            zoneShiftFilter={zoneShiftFilter}
+            zoneFilterRegion={zoneFilterRegion}
+            zoneFilterCamp={zoneFilterCamp}
+            assignFilterRegion={assignFilterRegion}
+            assignFilterCamp={assignFilterCamp}
+            drvregFilterRegion={drvregFilterRegion}
+            drvregFilterCamp={drvregFilterCamp}
+            drvregFilterShift={drvregFilterShift}
           />
         </div>
       )}

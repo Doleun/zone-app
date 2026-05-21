@@ -17,6 +17,14 @@ export default function MapView({
   onAssignZoneToggle,
   onBackupFixedToggle,
   assignShift = 'day',
+  zoneShiftFilter  = '',
+  zoneFilterRegion = '',
+  zoneFilterCamp   = '',
+  assignFilterRegion = '',
+  assignFilterCamp   = '',
+  drvregFilterRegion = '',
+  drvregFilterCamp   = '',
+  drvregFilterShift  = '',
 }) {
   const mapRef                = useRef(null);
   const mapInstance           = useRef(null);
@@ -39,6 +47,14 @@ export default function MapView({
   const onAssignZoneToggleRef  = useRef(onAssignZoneToggle);
   const onBackupFixedToggleRef = useRef(onBackupFixedToggle);
   const assignShiftRef         = useRef(assignShift);
+  const zoneShiftFilterRef     = useRef(zoneShiftFilter);
+  const zoneFilterRegionRef   = useRef(zoneFilterRegion);
+  const zoneFilterCampRef     = useRef(zoneFilterCamp);
+  const assignFilterRegionRef = useRef(assignFilterRegion);
+  const assignFilterCampRef   = useRef(assignFilterCamp);
+  const drvregFilterRegionRef = useRef(drvregFilterRegion);
+  const drvregFilterCampRef   = useRef(drvregFilterCamp);
+  const drvregFilterShiftRef  = useRef(drvregFilterShift);
 
   const [drawCount, setDrawCount] = useState(0);
 
@@ -48,6 +64,14 @@ export default function MapView({
   useEffect(() => { onAssignZoneToggleRef.current = onAssignZoneToggle; }, [onAssignZoneToggle]);
   useEffect(() => { onBackupFixedToggleRef.current = onBackupFixedToggle; }, [onBackupFixedToggle]);
   useEffect(() => { assignShiftRef.current = assignShift; }, [assignShift]);
+  useEffect(() => { zoneShiftFilterRef.current     = zoneShiftFilter;   }, [zoneShiftFilter]);
+  useEffect(() => { zoneFilterRegionRef.current   = zoneFilterRegion;  }, [zoneFilterRegion]);
+  useEffect(() => { zoneFilterCampRef.current     = zoneFilterCamp;    }, [zoneFilterCamp]);
+  useEffect(() => { assignFilterRegionRef.current = assignFilterRegion; }, [assignFilterRegion]);
+  useEffect(() => { assignFilterCampRef.current   = assignFilterCamp;   }, [assignFilterCamp]);
+  useEffect(() => { drvregFilterRegionRef.current = drvregFilterRegion; }, [drvregFilterRegion]);
+  useEffect(() => { drvregFilterCampRef.current   = drvregFilterCamp;   }, [drvregFilterCamp]);
+  useEffect(() => { drvregFilterShiftRef.current  = drvregFilterShift;  }, [drvregFilterShift]);
 
   /* ── 지도 초기화 ── */
   useEffect(() => {
@@ -352,17 +376,38 @@ export default function MapView({
   const applyHiddenZones = useCallback(() => {
     const map = mapInstance.current;
     if (!map || curTab === 'assign') return;
+    /* zone 탭 필터 */
+    const shiftFilter  = curTab === 'zone' ? zoneShiftFilterRef.current  : drvregFilterShiftRef.current;
+    const regionFilter = curTab === 'zone' ? zoneFilterRegionRef.current : drvregFilterRegionRef.current;
+    const campFilter   = curTab === 'zone' ? zoneFilterCampRef.current   : drvregFilterCampRef.current;
+
     Object.entries(zoneLayersRef.current).forEach(([zid, { poly, label }]) => {
-      if (hiddenZones?.has(zid)) {
+      const zone = zones.find(z => z.id === zid);
+      /* 교대 필터: 해당 교대 수량 0이면 숨김 */
+      const shiftHidden = shiftFilter && zone && (
+        shiftFilter === 'day'
+          ? (parseInt(zone.qtyDay != null ? zone.qtyDay : (zone.qty ?? 0)) || 0) === 0
+          : (parseInt(zone.qtyNight) || 0) === 0
+      );
+      /* 지역/캠프 필터 */
+      const regionHidden = regionFilter && zone && zone.region !== regionFilter;
+      const campHidden   = campFilter   && zone && zone.camp   !== campFilter;
+      if (hiddenZones?.has(zid) || shiftHidden || regionHidden || campHidden) {
         try { map.removeLayer(poly); map.removeLayer(label); } catch{}
       } else {
         try { if (!map.hasLayer(poly))  map.addLayer(poly);  } catch{}
         try { if (!map.hasLayer(label)) map.addLayer(label); } catch{}
       }
     });
-  }, [hiddenZones, curTab]);
+  }, [hiddenZones, curTab, zones, zoneFilterRegion, zoneFilterCamp, drvregFilterRegion, drvregFilterCamp, drvregFilterShift]);
 
   useEffect(() => { applyHiddenZones(); }, [hiddenZones, applyHiddenZones]);
+  useEffect(() => { if (curTab === 'zone' || curTab === 'drvreg') applyHiddenZones(); }, [zoneShiftFilter]);
+  useEffect(() => { if (curTab === 'zone' || curTab === 'drvreg') applyHiddenZones(); }, [zoneFilterRegion]);
+  useEffect(() => { if (curTab === 'zone' || curTab === 'drvreg') applyHiddenZones(); }, [zoneFilterCamp]);
+  useEffect(() => { if (curTab === 'drvreg') applyHiddenZones(); }, [drvregFilterRegion]);
+  useEffect(() => { if (curTab === 'drvreg') applyHiddenZones(); }, [drvregFilterCamp]);
+  useEffect(() => { if (curTab === 'drvreg') applyHiddenZones(); }, [drvregFilterShift]);
 
   /* ══════════════════════════════════════
      탭 전환
@@ -397,7 +442,9 @@ export default function MapView({
     const map = mapInstance.current; if (!map) return;
     unassignedLayerRef.current?.clearLayers();
 
-    const shift = assignShiftRef.current;
+    const shift   = assignShiftRef.current;
+    const aRegion = assignFilterRegionRef.current;
+    const aCamp   = assignFilterCampRef.current;
 
     /* 현재 교대의 고정기사가 배정한 구역만 "배정됨"으로 처리 */
     const assignedZoneIds = new Set(
@@ -408,6 +455,10 @@ export default function MapView({
 
     zones.forEach(z => {
       if (assignedZoneIds.has(z.id)) return;
+
+      /* 지역/캠프 필터 적용 */
+      if (aRegion && z.region !== aRegion) return;
+      if (aCamp   && z.camp   !== aCamp)   return;
 
       /* 해당 교대 수량이 0이면 완전히 숨김 */
       const qty = shift === 'night'
@@ -471,16 +522,39 @@ export default function MapView({
 
     const shift = assignShiftRef.current;
 
-    /* 현재 교대 기사만 렌더링 */
-    const shiftDrivers = drivers.filter(d => (d.shift || 'day') === shift);
+    /* 현재 교대 + 지역/캠프 필터 기사만 렌더링 */
+    const aRegion = assignFilterRegionRef.current;
+    const aCamp   = assignFilterCampRef.current;
+    const shiftDrivers = drivers.filter(d => {
+      if ((d.shift || 'day') !== shift) return false;
+      if (aRegion && d.region !== aRegion) return false;
+      if (aCamp) {
+        const match = d.type === 'fixed'
+          ? d.camp === aCamp
+          : (d.camps || []).includes(aCamp);
+        if (!match) return false;
+      }
+      return true;
+    });
 
     shiftDrivers.forEach(driver => {
       if (driver.type === 'backup' && driver.id !== selectedDriverId) return;
-      const dZones = (driver.zones||[]).map(zid => zones.find(z => z.id === zid)).filter(Boolean);
+
+      /* 백업기사 zones → 백업 대상 고정기사 zones 실시간 합산 */
+      const effectiveZoneIds = driver.type === 'backup'
+        ? [...new Set(
+            drivers
+              .filter(d => (driver.selectedFixed || []).includes(d.id) && d.type === 'fixed')
+              .flatMap(d => d.zones || [])
+          )]
+        : (driver.zones || []);
+
+      const dZones = effectiveZoneIds.map(zid => zones.find(z => z.id === zid)).filter(Boolean);
       if (!dZones.length) return;
 
+      const effectiveDriver = { ...driver, zones: effectiveZoneIds };
       const color   = driverColor(driver.id, drivers);
-      const total   = getDriverTotal(driver, zones);
+      const total   = getDriverTotal(effectiveDriver, zones);
       const opacity = selectedDriverId ? (driver.id === selectedDriverId ? .4 : .1) : .3;
       const weight  = selectedDriverId ? (driver.id === selectedDriverId ? 3  : 1)  : 2;
       driverPolysRef.current[driver.id] = { color, polys: [] };
@@ -547,6 +621,11 @@ export default function MapView({
     renderUnassignedZones();
     renderAssignOverlay();
   }, [assignShift]);
+  useEffect(() => {
+    if (curTab !== 'assign') return;
+    renderDriversOnMap();
+    renderUnassignedZones();
+  }, [assignFilterRegion, assignFilterCamp]);
 
   useEffect(() => {
     if (curTab === 'assign') {

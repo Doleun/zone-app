@@ -53,11 +53,20 @@ export const makeZoneIcon = (z) => {
   });
 };
 
-export const makeDriverIcon = (driver, total) => L.divIcon({
-  className: 'zlabel',
-  html: `<div class="zlabel-inner"><div>${driver.name}</div><div class="zlabel-qty">${total}개</div></div>`,
-  iconSize: null, iconAnchor: [0, 0],
-});
+export const makeDriverIcon = (driver, total) => {
+  const isBackup = driver.type === 'backup';
+  const style = isBackup
+    ? 'background:rgba(120,80,0,0.88);border-color:#92610a;color:#fde68a;'
+    : '';
+  return L.divIcon({
+    className: 'zlabel',
+    html: `<div class="zlabel-inner" style="${style}">`
+        + `<div>${driver.name}</div>`
+        + `<div class="zlabel-qty" style="${isBackup ? 'color:#fcd34d;' : ''}">${total}개</div>`
+        + `</div>`,
+    iconSize: null, iconAnchor: [0, 0],
+  });
+};
 
 export const makeUnassignedIcon = (z) => L.divIcon({
   className: 'zlabel',

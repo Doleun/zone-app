@@ -23,7 +23,7 @@ export const subscribeData = (callback) =>
   });
 
 export const saveData = (zones, drivers) =>
-  setDoc(doc(db, 'data', 'main'), { zones, drivers });
+  setDoc(doc(db, 'data', 'main'), deepSanitize({ zones, drivers }));
 
 /* ══════════════════════════════════════
    지역

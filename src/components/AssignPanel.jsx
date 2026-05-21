@@ -9,9 +9,9 @@ export default function AssignPanel({
   onSave, showToast,
   selectedDriverId, setSelectedDriverId,
   assignShift, setAssignShift,
+  filterRegion, setFilterRegion,
+  filterCamp,   setFilterCamp,
 }) {
-  const [filterRegion, setFilterRegion] = useState('');
-  const [filterCamp,   setFilterCamp]   = useState('');
   const [sortMode,     setSortMode]     = useState('name');
   const [filterType,   setFilterType]   = useState('fixed');
 
@@ -51,14 +51,22 @@ export default function AssignPanel({
     const sel = checked
       ? [...(backup?.selectedFixed||[]), fixedId]
       : (backup?.selectedFixed||[]).filter(id => id !== fixedId);
-    const allZoneIds = sel.length > 0
-      ? [...new Set(drivers.filter(d => sel.includes(d.id)).flatMap(d => d.zones||[]))]
-      : [];
+    /* zones는 저장하지 않음 — 렌더 시점에 고정기사 zones를 실시간 합산 */
     const newDrivers = drivers.map(d =>
-      d.id === backupId ? { ...d, selectedFixed: sel, zones: allZoneIds } : d
+      d.id === backupId ? { ...d, selectedFixed: sel } : d
     );
     setDrivers(newDrivers);
     await onSave(null, newDrivers);
+  };
+
+  /* 백업기사의 실제 담당 구역 = 백업 대상 고정기사들의 현재 zones 합산 */
+  const getBackupZones = (backup) => {
+    const sel = backup.selectedFixed || [];
+    if (!sel.length) return [];
+    return [...new Set(
+      drivers.filter(d => sel.includes(d.id) && d.type === 'fixed')
+             .flatMap(d => d.zones || [])
+    )];
   };
 
   const toggleDriver = (did) => {
@@ -66,12 +74,15 @@ export default function AssignPanel({
   };
 
   const driverSubText = (d) => {
-    const total = getDriverTotal(d, zones);
     if (d.type === 'backup') {
       const names = (d.selectedFixed||[])
         .map(fid=>drivers.find(dr=>dr.id===fid)?.name).filter(Boolean).join(', ');
+      const backupZones = getBackupZones(d);
+      const backupDriver = { ...d, zones: backupZones };
+      const total = getDriverTotal(backupDriver, zones);
       return names ? `${names} 백업 · 평균 ${total}개` : '고정기사 미선택';
     }
+    const total = getDriverTotal(d, zones);
     const zoneNames = (d.zones||[])
       .map(zid=>zones.find(z=>z.id===zid)?.name).filter(Boolean)
       .sort((a,b)=>a.localeCompare(b,'ko'))
@@ -264,10 +275,6 @@ export default function AssignPanel({
           </select>
         </div>
 
-        <div className="layer-ctrl-row">
-          <button className="lbtn" onClick={()=>setSelectedDriverId(null)}>🗺️ 전체보기</button>
-        </div>
-
         <div className="sort-row">
           <button className={`sort-btn ${sortMode==='name'?'active':''}`} onClick={()=>setSortMode('name')}>가나다순</button>
           <button className={`sort-btn ${sortMode==='qty'?'active':''}`}  onClick={()=>setSortMode('qty')}>수량순</button>
@@ -284,8 +291,16 @@ export default function AssignPanel({
           : (() => {
             const pinned     = selectedDriverId ? filteredDrivers.filter(d => d.id === selectedDriverId) : [];
             const rest       = filteredDrivers.filter(d => d.id !== selectedDriverId);
-            const unassigned = rest.filter(d => !(d.zones||[]).length);
-            const assigned   = rest.filter(d =>  (d.zones||[]).length > 0);
+            const unassigned = rest.filter(d =>
+              d.type === 'backup'
+                ? !(d.selectedFixed||[]).length
+                : !(d.zones||[]).length
+            );
+            const assigned = rest.filter(d =>
+              d.type === 'backup'
+                ? !!(d.selectedFixed||[]).length
+                : !!(d.zones||[]).length
+            );
             return (<>
               {pinned.map(renderDriverItem)}
               {unassigned.length > 0 &&

@@ -8,10 +8,10 @@ export default function ZonePanel({
   pendingLatlngs, setPendingLatlngs,
   hiddenZones, setHiddenZones,
   setFocusZoneId,
+  filterShift,  setFilterShift,
+  filterRegion, setFilterRegion,
+  filterCamp,   setFilterCamp,
 }) {
-  const [filterRegion, setFilterRegion] = useState('');
-  const [filterCamp,   setFilterCamp]   = useState('');
-  const [filterShift,  setFilterShift]  = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [editZone,        setEditZone]        = useState(null);
   const [showModal,       setShowModal]       = useState(false);

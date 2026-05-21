@@ -69,10 +69,14 @@ export default function SimAssignPanel({
       });
       setEditDriverId(driver.id);
     } else {
-      /* 신규: scope 기반 기본값 */
-      const defaultShift = scopeShifts.size === 1 ? [...scopeShifts][0] : 'day';
-      const defaultCamp  = scopeCampList.length === 1 ? scopeCampList[0].id : '';
-      const defaultCamps = scopeCampList.map(c => c.id);
+      /* 신규: scope 기반 기본값 + 현재 필터값 우선 적용 */
+      const defaultShift = filterShift
+        ? filterShift
+        : (scopeShifts.size === 1 ? [...scopeShifts][0] : 'day');
+      const defaultCamp  = filterCamp
+        ? filterCamp
+        : (scopeCampList.length === 1 ? scopeCampList[0].id : '');
+      const defaultCamps = filterCamp ? [filterCamp] : scopeCampList.map(c => c.id);
       setDriverForm({ name:'', type:'fixed', shift:defaultShift, camp:defaultCamp, camps:defaultCamps });
       setEditDriverId(null);
       setBulkMode(false);
@@ -336,7 +340,7 @@ export default function SimAssignPanel({
 
   const sortDrivers = (arr) => arr.slice().sort((a,b) =>
     sortMode === 'qty'
-      ? getDriverTotal(b) - getDriverTotal(a)
+      ? getDriverTotal(b, scopeZones) - getDriverTotal(a, scopeZones)
       : a.name.localeCompare(b.name,'ko')
   );
 

@@ -4,10 +4,11 @@ export default function DriverRegPanel({
   zones, drivers, setDrivers,
   regions, camps,
   onSave, showToast,
+  filterRegion, setFilterRegion,
+  filterCamp,   setFilterCamp,
+  filterShift,  setFilterShift,
 }) {
-  const [filterRegion, setFilterRegion] = useState('');
-  const [filterCamp,   setFilterCamp]   = useState('');
-  const [filterShift,  setFilterShift]  = useState('');
+  const [filterType,   setFilterType]   = useState('all');
   const [showModal,    setShowModal]    = useState(false);
   const [editId,       setEditId]       = useState(null);
   const [form, setForm] = useState({ name:'', type:'fixed', shift:'day', region:'', camp:'', camps:[] });
@@ -18,15 +19,18 @@ export default function DriverRegPanel({
 
   const filteredDrivers = useMemo(() => {
     return [...drivers].filter(d => {
+      if (filterType !== 'all' && d.type !== filterType) return false;
       if (filterRegion && d.region !== filterRegion) return false;
       if (filterCamp) {
-        if (d.type === 'fixed')  return d.camp === filterCamp;
-        if (d.type === 'backup') return (d.camps||[]).includes(filterCamp);
+        const campMatch = d.type === 'fixed'
+          ? d.camp === filterCamp
+          : (d.camps||[]).includes(filterCamp);
+        if (!campMatch) return false;
       }
       if (filterShift && d.shift !== filterShift) return false;
       return true;
     }).sort((a,b) => a.name.localeCompare(b.name,'ko'));
-  }, [drivers, filterRegion, filterCamp, filterShift]);
+  }, [drivers, filterType, filterRegion, filterCamp, filterShift]);
 
   const modalCamps = useMemo(() =>
     form.region ? camps.filter(c=>c.region===form.region) : [],
@@ -34,6 +38,7 @@ export default function DriverRegPanel({
 
   const openModal = (driver=null) => {
     if (driver) {
+      /* 편집: 기존 값 그대로 */
       setForm({
         name:   driver.name,
         type:   driver.type  || 'fixed',
@@ -44,7 +49,20 @@ export default function DriverRegPanel({
       });
       setEditId(driver.id);
     } else {
-      setForm({ name:'', type:'fixed', shift:'day', region:'', camp:'', camps:[] });
+      /* 신규: 현재 필터값을 기본값으로 */
+      const defaultShift  = filterShift  || 'day';
+      const defaultRegion = filterRegion || '';
+      const defaultCamp   = filterCamp   || '';
+      const defaultType   = filterType === 'all' ? 'fixed' : filterType;
+      const defaultCamps  = defaultCamp ? [defaultCamp] : [];
+      setForm({
+        name:   '',
+        type:   defaultType,
+        shift:  defaultShift,
+        region: defaultRegion,
+        camp:   defaultType === 'fixed' ? defaultCamp : '',
+        camps:  defaultType === 'backup' ? defaultCamps : [],
+      });
       setEditId(null);
     }
     setShowModal(true);
@@ -76,7 +94,7 @@ export default function DriverRegPanel({
     showToast('✅ 저장 완료');
   };
 
-  /* ── 삭제: 백업기사 selectedFixed 정리 + 구역 재계산 ── */
+  /* ── 삭제: 백업기사 selectedFixed 정리 ── */
   const deleteDriver = async (did) => {
     if (!window.confirm('이 기사를 삭제할까요?')) return;
     const remaining = drivers.filter(d => d.id !== did);
@@ -84,10 +102,7 @@ export default function DriverRegPanel({
       if (d.type !== 'backup') return d;
       const newSel = (d.selectedFixed || []).filter(id => id !== did);
       if (newSel.length === (d.selectedFixed || []).length) return d;
-      const allZoneIds = newSel.length > 0
-        ? [...new Set(remaining.filter(fd => newSel.includes(fd.id)).flatMap(fd => fd.zones || []))]
-        : [];
-      return { ...d, selectedFixed: newSel, zones: allZoneIds, labelPos: allZoneIds.length === 0 ? null : d.labelPos };
+      return { ...d, selectedFixed: newSel };
     });
     setDrivers(newDrivers);
     await onSave(null, newDrivers);
@@ -124,36 +139,62 @@ export default function DriverRegPanel({
           </select>
         </div>
 
+        <div className="sort-row">
+          <button className={`sort-btn ${filterType==='all'?'active':''}`}    onClick={()=>setFilterType('all')}>전체</button>
+          <button className={`sort-btn ${filterType==='fixed'?'active':''}`}  onClick={()=>setFilterType('fixed')}>고정기사</button>
+          <button className={`sort-btn ${filterType==='backup'?'active':''}`} onClick={()=>setFilterType('backup')}>백업기사</button>
+        </div>
+
         <button className="btn btn-primary" onClick={()=>openModal()}>👤 기사 등록</button>
       </div>
 
       <div className="sb-list">
         {filteredDrivers.length === 0
           ? <div className="empty"><div className="empty-icon">👤</div><div className="empty-text">등록된 기사가 없습니다.<br/>"기사 등록"으로 추가하세요.</div></div>
-          : filteredDrivers.map(d => {
-            const rName   = regions.find(r=>r.id===d.region)?.name||'';
-            const campStr = d.type==='fixed'
-              ? camps.find(c=>c.id===d.camp)?.name||''
-              : (d.camps||[]).map(cid=>camps.find(c=>c.id===cid)?.name).filter(Boolean).join(', ');
-            return (
-              <div key={d.id} className="item">
-                <div className="item-body">
-                  <div className="item-name">
-                    {d.name}
-                    <span className={`badge badge-${d.type}`}>{d.type==='backup'?'백업':'고정'}</span>
-                    <span className={`badge badge-${d.shift==='night'?'night':'day'}`}>
-                      {d.shift==='night'?'🌙 야간':'☀️ 주간'}
-                    </span>
+          : (() => {
+            const renderItem = (d) => {
+              const rName   = regions.find(r=>r.id===d.region)?.name||'';
+              const campStr = d.type==='fixed'
+                ? camps.find(c=>c.id===d.camp)?.name||''
+                : (d.camps||[]).map(cid=>camps.find(c=>c.id===cid)?.name).filter(Boolean).join(', ');
+              return (
+                <div key={d.id} className="item">
+                  <div className="item-body">
+                    <div className="item-name">
+                      {d.name}
+                      <span className={`badge badge-${d.type}`}>{d.type==='backup'?'백업':'고정'}</span>
+                      <span className={`badge badge-${d.shift==='night'?'night':'day'}`}>
+                        {d.shift==='night'?'🌙 야간':'☀️ 주간'}
+                      </span>
+                    </div>
+                    <div className="item-sub">{[rName,campStr].filter(Boolean).join(' · ')}</div>
                   </div>
-                  <div className="item-sub">{[rName,campStr].filter(Boolean).join(' · ')}</div>
+                  <div className="item-actions">
+                    <button className="icon-btn" onClick={()=>openModal(d)}>✏️</button>
+                    <button className="icon-btn red" onClick={()=>deleteDriver(d.id)}>🗑️</button>
+                  </div>
                 </div>
-                <div className="item-actions">
-                  <button className="icon-btn" onClick={()=>openModal(d)}>✏️</button>
-                  <button className="icon-btn red" onClick={()=>deleteDriver(d.id)}>🗑️</button>
+              );
+            };
+
+            const fixed  = filteredDrivers.filter(d => d.type === 'fixed');
+            const backup = filteredDrivers.filter(d => d.type === 'backup');
+
+            return (<>
+              {fixed.length > 0 && (<>
+                <div style={{ padding:'6px 10px 4px', fontSize:10, fontWeight:700, color:'var(--text2)', letterSpacing:'.6px', background:'var(--surface2)', borderBottom:'1px solid var(--border)' }}>
+                  고정기사 {fixed.length}명
                 </div>
-              </div>
-            );
-          })
+                {fixed.map(renderItem)}
+              </>)}
+              {backup.length > 0 && (<>
+                <div style={{ padding:'6px 10px 4px', fontSize:10, fontWeight:700, color:'var(--text2)', letterSpacing:'.6px', background:'var(--surface2)', borderBottom:'1px solid var(--border)', borderTop: fixed.length > 0 ? '2px solid var(--border)' : 'none' }}>
+                  백업기사 {backup.length}명
+                </div>
+                {backup.map(renderItem)}
+              </>)}
+            </>);
+          })()
         }
       </div>
 
@@ -171,7 +212,7 @@ export default function DriverRegPanel({
             <div className="field">
               <label className="field-label">유형</label>
               <select className="field-input" value={form.type}
-                onChange={e=>setForm(f=>({...f,type:e.target.value,camp:'',camps:[]}))}>
+                onChange={e=>setForm(f=>({...f,type:e.target.value,camp:'',camps: filterCamp ? [filterCamp] : []}))}>
                 <option value="fixed">고정</option>
                 <option value="backup">백업</option>
               </select>
