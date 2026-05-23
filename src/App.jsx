@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase/config';
 import {
   subscribeData, saveData,
@@ -18,7 +18,7 @@ import SimAssignPanel from './components/simulation/SimAssignPanel';
 import SimMapView from './components/simulation/SimMapView';
 import Toast from './components/Toast';
 import './index.css';
-import { ZONE_COLORS, DRIVER_COLORS } from './utils/constants';
+import { ZONE_COLORS } from './utils/constants';
 
 export default function App() {
   const [authState,        setAuthState]        = useState('loading');
@@ -73,13 +73,23 @@ export default function App() {
 
   /* ── 인증 ── */
   useEffect(() => {
+    /* 리디렉션 로그인 결과 처리 */
+    getRedirectResult(auth).catch(() => {});
+
     return onAuthStateChanged(auth, async user => {
       if (!user) { setAuthState('login'); return; }
-      const snap = await getUserDoc(user.email);
-      if (!snap.exists()) { setAuthState('denied'); return; }
-      setCurrentUser(user);
-      setCurrentRole(snap.data().role);
-      setAuthState('app');
+      try {
+        const snap = await Promise.race([
+          getUserDoc(user.email),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)),
+        ]);
+        if (!snap.exists()) { setAuthState('denied'); return; }
+        setCurrentUser(user);
+        setCurrentRole(snap.data().role);
+        setAuthState('app');
+      } catch(e) {
+        setAuthState('denied');
+      }
     });
   }, []);
 
@@ -87,19 +97,9 @@ export default function App() {
   useEffect(() => {
     if (authState !== 'app') return;
     const unsub1 = subscribeData(({ zones: z, drivers: d }) => {
-      /* 백업기사 zones 자동 정리 (구버전 데이터 마이그레이션) */
-      const hasLegacyBackupZones = d.some(dr => dr.type === 'backup' && (dr.zones || []).length > 0);
-      if (hasLegacyBackupZones) {
-        const cleaned = d.map(dr =>
-          dr.type === 'backup' ? { ...dr, zones: [] } : dr
-        );
-        saveData(z, cleaned).then(() => {});
-        setDrivers(cleaned);
-      } else {
-        setDrivers(d);
-      }
       setZones(z);
-      setColorIndex(z.length);
+      setDrivers(d);
+      setColorIndex(prev => Math.max(prev, z.length));
       setSaveState('saved');
     });
     const unsub2 = subscribeRegions(setRegions);
@@ -132,7 +132,7 @@ export default function App() {
   const {
     simulations, activeSimId, setActiveSimId, activeSim,
     createSim, deleteSim, saveSimDrivers, toggleSimZone, applySim,
-  } = useSimulation({ realDrivers: drivers, showToast });
+  } = useSimulation({ realDrivers: drivers, showToast, authReady: authState === 'app' });
 
   /* ── 다음 색상 ── */
   const nextColor = useCallback(() => {
@@ -203,8 +203,12 @@ export default function App() {
 
   /* ── 로그인/로그아웃 ── */
   const googleLogin = async () => {
-    try { await signInWithPopup(auth, new GoogleAuthProvider()); }
-    catch(e) { if (e.code !== 'auth/popup-closed-by-user') showToast('❌ 로그인 실패'); }
+    try {
+      /* 배포 환경 COOP 이슈 방지 - redirect 방식 사용 */
+      await signInWithRedirect(auth, new GoogleAuthProvider());
+    } catch(e) {
+      showToast('❌ 로그인 실패');
+    }
   };
   const logout = () => signOut(auth);
 

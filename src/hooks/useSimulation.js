@@ -7,14 +7,15 @@ import {
   applySimulation,
 } from '../firebase/db';
 
-export function useSimulation({ realDrivers, showToast }) {
+export function useSimulation({ realDrivers, showToast, authReady }) {
   const [simulations, setSimulations] = useState([]);
   const [activeSimId, setActiveSimId] = useState(null);
 
   useEffect(() => {
+    if (!authReady) return;
     const unsub = subscribeSimulations(setSimulations);
     return () => unsub();
-  }, []);
+  }, [authReady]);
 
   const activeSim = simulations.find(s => s.id === activeSimId) || null;
 

@@ -36,13 +36,13 @@ export default function Header({
     showToast('✅ Excel 내보내기 완료 (구역ID는 수정하지 마세요)');
   };
 
-  /* ── Excel 가져오기 ── */
+  /* ── Excel 가져오기 (readAsArrayBuffer - 크로스브라우저 안전) ── */
   const importExcel = (e) => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = async (ev) => {
       try {
-        const wb   = XLSX.read(ev.target.result, { type: 'binary' });
+        const wb   = XLSX.read(ev.target.result, { type: 'array' });
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
         if (!rows.length) { showToast('❌ 데이터가 없습니다'); return; }
         if (!('구역ID' in rows[0])) { showToast('❌ 구역ID 컬럼이 없습니다. 먼저 내보내기 후 수정하세요'); return; }
@@ -67,7 +67,7 @@ export default function Header({
       } catch(err) { showToast('❌ 파일 오류: ' + err.message); }
       e.target.value = '';
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
   /* ── 백업 ── */
@@ -179,7 +179,6 @@ export default function Header({
           <button className="logout-btn" onClick={logout}>로그아웃</button>
         </div>
 
-        {/* 탭 — 등록 그룹 | 구분선 | 할당 그룹 */}
         <div style={{ display:'flex', gap:3, marginLeft:'auto', flexShrink:0, alignItems:'center' }}>
           {isMaster && <button style={tabStyle('rc')}     onClick={() => setCurTab('rc')}>캠프/지역</button>}
           <button style={tabStyle('drvreg')} onClick={() => setCurTab('drvreg')}>기사</button>
@@ -191,7 +190,6 @@ export default function Header({
         </div>
       </div>
 
-      {/* 사용자 관리 모달 */}
       {showUserMgmt && (
         <div className="overlay" onClick={() => setShowUserMgmt(false)}>
           <div className="modal" style={{ maxWidth:420 }} onClick={e => e.stopPropagation()}>
@@ -240,21 +238,19 @@ export default function Header({
           </div>
         </div>
       )}
-      {/* 서버 매뉴얼 모달 */}
+
       {showManual && (
         <div className="overlay" onClick={() => setShowManual(false)}>
           <div className="modal" style={{ maxWidth:480 }} onClick={e => e.stopPropagation()}>
             <div className="modal-title">📋 서버 매뉴얼</div>
             <div style={{ display:'flex', flexDirection:'column', gap:14, fontSize:12 }}>
-
               <div>
                 <div style={{ fontWeight:700, color:'var(--accent)', marginBottom:6 }}>🚀 개발 서버 실행</div>
                 <pre style={{ background:'var(--surface2)', borderRadius:6, padding:'10px 12px', margin:0, fontSize:11, lineHeight:1.8, overflowX:'auto' }}>
-{`cd C:\\zone-app
+{`cd C:\zone-app
 npm run dev`}
                 </pre>
               </div>
-
               <div>
                 <div style={{ fontWeight:700, color:'var(--accent)', marginBottom:6 }}>💾 작업 후 저장 (Push)</div>
                 <pre style={{ background:'var(--surface2)', borderRadius:6, padding:'10px 12px', margin:0, fontSize:11, lineHeight:1.8, overflowX:'auto' }}>
@@ -263,15 +259,13 @@ git commit -m "작업내용"
 git push`}
                 </pre>
               </div>
-
               <div>
                 <div style={{ fontWeight:700, color:'var(--accent)', marginBottom:6 }}>📥 다른 PC에서 최신 받기 (Pull)</div>
                 <pre style={{ background:'var(--surface2)', borderRadius:6, padding:'10px 12px', margin:0, fontSize:11, lineHeight:1.8, overflowX:'auto' }}>
-{`cd C:\\zone-app
+{`cd C:\zone-app
 git pull`}
                 </pre>
               </div>
-
               <div>
                 <div style={{ fontWeight:700, color:'var(--accent)', marginBottom:6 }}>🌐 배포</div>
                 <pre style={{ background:'var(--surface2)', borderRadius:6, padding:'10px 12px', margin:0, fontSize:11, lineHeight:1.8, overflowX:'auto' }}>
@@ -279,7 +273,6 @@ git pull`}
 firebase deploy`}
                 </pre>
               </div>
-
             </div>
             <div className="modal-btns">
               <button className="btn btn-secondary" onClick={() => setShowManual(false)}>닫기</button>
