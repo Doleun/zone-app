@@ -7,12 +7,12 @@ import { getFirestore } from 'firebase/firestore';
    이전 시 localStorage 저장값 우선 적용
 ══════════════════════════════════════ */
 const DEFAULT_CONFIG = {
-  apiKey:            "AIzaSyAbUYtqA0u0i43TDPx2dpyHtIaoaoWpt3U",
-  authDomain:        "th-zone-data.firebaseapp.com",
-  projectId:         "th-zone-data",
-  storageBucket:     "th-zone-data.firebasestorage.app",
-  messagingSenderId: "343505822539",
-  appId:             "1:343505822539:web:019ff20fef00b042033ece",
+  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 let firebaseConfig = DEFAULT_CONFIG;
