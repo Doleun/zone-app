@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 인증된 사용자인지 확인
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // users 컬렉션에 등록된 사용자인지 확인
+    function isUser() {
+      return isAuth() && exists(
+        /databases/$(database)/documents/users/$(request.auth.token.email)
+      );
+    }
+
+    // master 역할 보유 여부 확인
+    function isMaster() {
+      return isAuth() && get(
+        /databases/$(database)/documents/users/$(request.auth.token.email)
+      ).data.role == 'master';
+    }
+
+    // 구역·기사 데이터 (등록 유저 read/write)
+    match /data/{doc} {
+      allow read, write: if isUser();
+    }
+
+    // 지역 (등록 유저 read / master write)
+    match /regions/{doc} {
+      allow read:  if isUser();
+      allow write: if isMaster();
+    }
+
+    // 캠프 (등록 유저 read / master write)
+    match /camps/{doc} {
+      allow read:  if isUser();
+      allow write: if isMaster();
+    }
+
+    // 사용자 (등록 유저 read / master write)
+    match /users/{email} {
+      allow read:  if isUser();
+      allow write: if isMaster();
+    }
+
+    // 시뮬레이션 (등록 유저 read/write)
+    match /simulations/{doc} {
+      allow read, write: if isUser();
+    }
+  }
+}

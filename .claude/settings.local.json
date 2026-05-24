@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(firebase projects:list)",
+      "Bash(firebase firestore:rules:get)",
+      "Bash(firebase help *)",
+      "Bash(firebase firestore:indexes --json)",
+      "Bash(firebase firestore:rules)",
+      "Bash(firebase firestore:databases:get \"\\(default\\)\" --json)",
+      "Bash(firebase --version)",
+      "Bash(firebase --debug firestore:indexes)",
+      "Bash(node -e ' *)",
+      "Bash(ls ~/.config/configstore/)",
+      "Read(//c/Users/Doleun/.config/configstore/**)",
+      "Bash(node -e \"const fs=require\\('fs'\\);const d=JSON.parse\\(fs.readFileSync\\(process.env.HOME+'/.config/configstore/firebase-tools.json','utf8'\\)\\);process.stdout.write\\(d.tokens.access_token\\);\")",
+      "Bash(curl -s -H 'Authorization: Bearer __TRACKED_VAR__' https://firebaserules.googleapis.com/v1/projects/th-zone-data/releases)",
+      "Bash(curl -s -H 'Authorization: Bearer __TRACKED_VAR__' https://firebaserules.googleapis.com/v1/projects/th-zone-data/rulesets/e7a71659-a8c0-4ba1-a09a-595c23c381b7)",
+      "Bash(npm run *)",
+      "Bash(firebase deploy *)"
+    ]
+  }
+}
