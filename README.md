@@ -1,16 +1,50 @@
-# React + Vite
+# 구역 관리 앱
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+구역별 배송 기사 배정을 관리하는 내부 웹 애플리케이션.
 
-Currently, two official plugins are available:
+## 주요 기능
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- 지도 위에서 구역 그리기 및 편집 (주간/야간 수량 관리)
+- 고정기사 / 백업기사 등록 및 구역 배정
+- 배정 시뮬레이션 (실제 데이터에 영향 없이 시나리오 테스트)
+- 지역/캠프 마스터 데이터 관리
+- Excel 내보내기/가져오기, 전체 백업/복원
 
-## React Compiler
+## 기술 스택
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| 분류 | 사용 기술 |
+|------|----------|
+| 프론트엔드 | React 19, Vite |
+| 지도 | Leaflet, Turf.js |
+| 백엔드/DB | Firebase Firestore, Firebase Auth (Google OAuth) |
+| 배포 | Firebase Hosting |
 
-## Expanding the ESLint configuration
+## 실행 방법
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+# 의존성 설치 (최초 1회)
+npm install
+
+# 환경변수 설정 (최초 1회)
+# .env.example을 복사해 .env.local 생성 후 Firebase 키값 입력
+cp .env.example .env.local
+
+# 개발 서버 실행
+npm run dev
+# → http://localhost:5173
+```
+
+## 배포 방법
+
+```bash
+# 프로덕션 빌드
+npm run build
+
+# Firebase Hosting 배포
+firebase deploy
+```
+
+## 환경변수
+
+`.env.local` 파일에 Firebase 프로젝트 설정값을 입력한다 (`.env.example` 참고).  
+이 파일은 Git에서 제외되므로 직접 생성해야 한다.
