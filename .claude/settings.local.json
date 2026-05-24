@@ -16,7 +16,8 @@
       "Bash(curl -s -H 'Authorization: Bearer __TRACKED_VAR__' https://firebaserules.googleapis.com/v1/projects/th-zone-data/releases)",
       "Bash(curl -s -H 'Authorization: Bearer __TRACKED_VAR__' https://firebaserules.googleapis.com/v1/projects/th-zone-data/rulesets/e7a71659-a8c0-4ba1-a09a-595c23c381b7)",
       "Bash(npm run *)",
-      "Bash(firebase deploy *)"
+      "Bash(firebase deploy *)",
+      "Bash(firebase firestore:databases:update \"\\(default\\)\" --delete-protection ENABLED)"
     ]
   }
 }
