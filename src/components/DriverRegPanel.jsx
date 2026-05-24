@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 
 export default function DriverRegPanel({
-  zones, drivers, setDrivers,
+  drivers, setDrivers,
   regions, camps,
   onSave, showToast,
   filterRegion, setFilterRegion,

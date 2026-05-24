@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import * as turf from '@turf/turf';
-import { getQty, getDriverTotal, driverColor, centroid, makeZoneIcon, makeDriverIcon, makeUnassignedIcon } from '../utils/helpers';
+import { getDriverTotal, driverColor, centroid, makeZoneIcon, makeDriverIcon, makeUnassignedIcon } from '../utils/helpers';
 
 export default function MapView({
   curTab,
@@ -122,14 +122,15 @@ export default function MapView({
       );
     });
 
+    let pulseInterval = null;
     const selPoly = zoneLayersRef.current[zid]?.poly;
     if (selPoly) {
       let count = 0;
-      const pulse = setInterval(() => {
+      pulseInterval = setInterval(() => {
         count++;
         selPoly.setStyle(count % 2 === 1 ? { fillOpacity:.1, weight:2 } : { fillOpacity:.55, weight:4 });
         if (count >= 6) {
-          clearInterval(pulse);
+          clearInterval(pulseInterval);
           selPoly.setStyle({ color:zone.color, fillColor:zone.color, fillOpacity:.55, weight:4, opacity:1 });
         }
       }, 220);
@@ -142,8 +143,11 @@ export default function MapView({
       });
     }, 2000);
 
-    return () => clearTimeout(timer);
-  }, [focusZoneId]);
+    return () => {
+      clearTimeout(timer);
+      if (pulseInterval) clearInterval(pulseInterval);
+    };
+  }, [focusZoneId, zones]);
 
   /* ══════════════════════════════════════
      드라이버 포커스 (줌 + 하이라이트 + 깜빡임)

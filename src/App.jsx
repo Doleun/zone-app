@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase/config';
 import {
   subscribeData, saveData,
@@ -73,9 +73,6 @@ export default function App() {
 
   /* ── 인증 ── */
   useEffect(() => {
-    /* 리디렉션 로그인 결과 처리 */
-    getRedirectResult(auth).catch(() => {});
-
     return onAuthStateChanged(auth, async user => {
       if (!user) { setAuthState('login'); return; }
       try {
@@ -88,7 +85,7 @@ export default function App() {
         setCurrentRole(snap.data().role);
         setAuthState('app');
       } catch(e) {
-        setAuthState('denied');
+        setAuthState(e.message === 'timeout' ? 'error' : 'denied');
       }
     });
   }, []);
@@ -108,24 +105,24 @@ export default function App() {
     return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
   }, [authState]);
 
-  /* ── 저장 ── */
-  const handleSave = useCallback(async (newZones, newDrivers) => {
-    setSaveState('saving');
-    try {
-      /* ref로 항상 최신 state 참조 (빠른 연속 저장 시 stale 클로저 방지) */
-      await saveData(newZones ?? zonesRef.current, newDrivers ?? driversRef.current);
-    } catch(e) {
-      showToast('❌ 저장 실패: ' + e.message);
-      setSaveState('');
-    }
-  }, []); // zonesRef/driversRef는 ref, showToast는 안정적이므로 deps 불필요
-
   /* ── 토스트 ── */
   const toastTimerRef = useRef(null);
   const showToast = useCallback((msg) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast(msg);
     toastTimerRef.current = setTimeout(() => setToast(null), 2400);
+  }, []);
+
+  /* ── 저장 ── */
+  const handleSave = useCallback(async (newZones, newDrivers) => {
+    setSaveState('saving');
+    try {
+      await saveData(newZones ?? zonesRef.current, newDrivers ?? driversRef.current);
+      setSaveState('saved');
+    } catch(e) {
+      showToast('❌ 저장 실패: ' + e.message);
+      setSaveState('');
+    }
   }, []);
 
   /* ── 시뮬레이션 훅 (showToast 이후) ── */
@@ -203,12 +200,8 @@ export default function App() {
 
   /* ── 로그인/로그아웃 ── */
   const googleLogin = async () => {
-    try {
-      /* 배포 환경 COOP 이슈 방지 - redirect 방식 사용 */
-      await signInWithRedirect(auth, new GoogleAuthProvider());
-    } catch(e) {
-      showToast('❌ 로그인 실패');
-    }
+    try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+    catch(e) { if (e.code !== 'auth/popup-closed-by-user') showToast('❌ 로그인 실패'); }
   };
   const logout = () => signOut(auth);
 
@@ -258,6 +251,26 @@ export default function App() {
         <button className="btn btn-secondary" style={{ width:'auto', padding:'8px 20px' }} onClick={logout}>
           다른 계정으로 로그인
         </button>
+      </div>
+    </div>
+  );
+
+  if (authState === 'error') return (
+    <div className="denied-screen">
+      <div className="denied-box">
+        <div style={{ fontSize:40, marginBottom:14 }}>🌐</div>
+        <div style={{ fontSize:16, fontWeight:800, marginBottom:8 }}>네트워크 오류</div>
+        <div style={{ fontSize:12, color:'var(--text2)', lineHeight:1.7, marginBottom:20 }}>
+          서버에 연결할 수 없습니다.<br/>네트워크를 확인 후 다시 시도하세요.
+        </div>
+        <div style={{ display:'flex', gap:8, justifyContent:'center' }}>
+          <button className="btn btn-primary" style={{ width:'auto', padding:'8px 20px' }} onClick={() => window.location.reload()}>
+            다시 시도
+          </button>
+          <button className="btn btn-secondary" style={{ width:'auto', padding:'8px 20px' }} onClick={logout}>
+            다른 계정으로 로그인
+          </button>
+        </div>
       </div>
     </div>
   );

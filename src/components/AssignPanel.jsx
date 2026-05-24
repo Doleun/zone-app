@@ -1,12 +1,12 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import CollapsibleSection from './ui/CollapsibleSection';
 import { getQty, getDriverTotal } from '../utils/helpers';
 
 export default function AssignPanel({
-  zones, setZones,
+  zones,
   drivers, setDrivers,
   regions, camps,
-  onSave, showToast,
+  onSave,
   selectedDriverId, setSelectedDriverId,
   assignShift, setAssignShift,
   filterRegion, setFilterRegion,

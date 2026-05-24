@@ -94,7 +94,7 @@ export default function Header({
         if (!b.zones || !b.drivers) throw new Error('올바른 백업 파일이 아닙니다');
         await restoreBackup(b);
         showToast('✅ 복원 완료 — 새로고침합니다');
-        setTimeout(() => location.reload(), 1500);
+        setTimeout(() => window.location.reload(), 1500);
       } catch(err) { showToast('❌ 복원 실패: ' + err.message); }
       e.target.value = '';
     };
@@ -247,7 +247,7 @@ export default function Header({
               <div>
                 <div style={{ fontWeight:700, color:'var(--accent)', marginBottom:6 }}>🚀 개발 서버 실행</div>
                 <pre style={{ background:'var(--surface2)', borderRadius:6, padding:'10px 12px', margin:0, fontSize:11, lineHeight:1.8, overflowX:'auto' }}>
-{`cd C:\zone-app
+{`cd C:\\zone-app
 npm run dev`}
                 </pre>
               </div>
@@ -262,7 +262,7 @@ git push`}
               <div>
                 <div style={{ fontWeight:700, color:'var(--accent)', marginBottom:6 }}>📥 다른 PC에서 최신 받기 (Pull)</div>
                 <pre style={{ background:'var(--surface2)', borderRadius:6, padding:'10px 12px', margin:0, fontSize:11, lineHeight:1.8, overflowX:'auto' }}>
-{`cd C:\zone-app
+{`cd C:\\zone-app
 git pull`}
                 </pre>
               </div>

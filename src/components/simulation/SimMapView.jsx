@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import * as turf from '@turf/turf';
@@ -40,8 +40,8 @@ export default function SimMapView({
   const [splitRatio, setSplitRatio] = useState(50);
   const isDragging = useRef(false);
 
-  const scopeCamps = new Set(sim?.scope?.camps || []);
-  const scopeZones = zones.filter(z => scopeCamps.has(z.camp));
+  const scopeCamps = useMemo(() => new Set(sim?.scope?.camps || []), [sim]);
+  const scopeZones = useMemo(() => zones.filter(z => scopeCamps.has(z.camp)), [zones, scopeCamps]);
 
   /* ── 드래그 구분선 ── */
   const onDividerMouseDown = (e) => { e.preventDefault(); isDragging.current = true; };
@@ -95,20 +95,20 @@ export default function SimMapView({
     const allPts = scopeZones.flatMap(z => z.latlngs.map(p => [p.lat, p.lng]));
     try { realInstance.current?.fitBounds(L.latLngBounds(allPts), { padding:[40,40], animate:false }); } catch{}
     try { simInstance.current?.fitBounds(L.latLngBounds(allPts),  { padding:[40,40], animate:false }); } catch{}
-  }, [scopeZones.length, sim?.id]);
+  }, [scopeZones]);
 
   /* ── 실제 지도 갱신 ── */
   useEffect(() => {
     renderDriversOnMap(realInstance, realDriverLayerRef, realDrivers, scopeZones, selectedRealDriverId, false);
     renderUnassigned(realInstance, realUnassignedRef, realDrivers, scopeZones, false);
-  }, [realDrivers, selectedRealDriverId, scopeZones.length]);
+  }, [realDrivers, selectedRealDriverId, scopeZones]);
 
   /* ── 시뮬 지도 갱신 ── */
   useEffect(() => {
     renderDriversOnMap(simInstance, simDriverLayerRef, simDrivers, scopeZones, selectedSimDriverId, true);
     renderUnassigned(simInstance, simUnassignedRef, simDrivers, scopeZones, true);
     renderSimOverlay();
-  }, [simDrivers, selectedSimDriverId, scopeZones.length]);
+  }, [simDrivers, selectedSimDriverId, scopeZones]);
 
   /* ══════════════════════════════════════
      기사 렌더 (배송할당맵과 동일)
@@ -239,13 +239,6 @@ export default function SimMapView({
   }, [selectedSimDriverId, simDrivers, scopeZones]);
 
   useEffect(() => { renderSimOverlay(); }, [renderSimOverlay]);
-
-  useEffect(() => {
-    setTimeout(() => {
-      realInstance.current?.invalidateSize();
-      simInstance.current?.invalidateSize();
-    }, 100);
-  }, [splitView]);
 
   return (
     <div ref={containerRef} style={{ display:'flex', flex:1, position:'relative', overflow:'hidden' }}>

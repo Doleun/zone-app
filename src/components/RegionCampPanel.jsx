@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import { addRegion, deleteRegion, addCamp, deleteCamp } from '../firebase/db';
-import { saveData } from '../firebase/db';
 
 export default function RegionCampPanel({ regions, camps, zones, drivers, setZones, setDrivers, onSave, showToast }) {
   const [selectedRegion, setSelectedRegion] = useState('');
